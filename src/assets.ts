@@ -9,8 +9,8 @@ export function getWordlistContent(): string {
 
   if (typeof process !== 'undefined' && typeof process.cwd === 'function') {
     const candidates = [
-      path.resolve(process.cwd(), 'example/data/wordlist.txt'),
-      path.resolve(process.cwd(), 'example/public/data/wordlist.txt'),
+      path.resolve(process.cwd(), 'website/data/wordlist.txt'),
+      path.resolve(process.cwd(), 'website/public/data/wordlist.txt'),
       path.resolve(__dirname, 'data/wordlist.txt'),
       path.resolve(__dirname, 'public/data/wordlist.txt')
     ];
@@ -30,8 +30,8 @@ export function getFrequencyContent(): string {
 
   if (typeof process !== 'undefined' && typeof process.cwd === 'function') {
     const candidates = [
-      path.resolve(process.cwd(), 'example/data/khmer_words_freq.tsv'),
-      path.resolve(process.cwd(), 'example/public/data/khmer_words_freq.tsv'),
+      path.resolve(process.cwd(), 'website/data/khmer_words_freq.tsv'),
+      path.resolve(process.cwd(), 'website/public/data/khmer_words_freq.tsv'),
       path.resolve(__dirname, 'data/khmer_words_freq.tsv'),
       path.resolve(__dirname, 'public/data/khmer_words_freq.tsv')
     ];

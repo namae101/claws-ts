@@ -204,8 +204,8 @@ describe('Segmenter', () => {
 
   describe('end-to-end with GLNN model FlatBuffer', () => {
     it('segments real Khmer phrases using GLNNModel from model.tflite', async () => {
-      const modelPath = path.resolve('example/public/models/model.tflite');
-      const vocabPath = path.resolve('example/public/models/vocab.json');
+      const modelPath = path.resolve('website/public/models/model.tflite');
+      const vocabPath = path.resolve('website/public/models/vocab.json');
       const modelBuf = fs.readFileSync(modelPath).buffer;
       const vocab = JSON.parse(fs.readFileSync(vocabPath, 'utf8'));
 
@@ -222,8 +222,8 @@ describe('Segmenter', () => {
     });
 
     it('splits large inputs into chunks and calls onProgress callback', async () => {
-      const modelPath = path.resolve('example/public/models/model.tflite');
-      const vocabPath = path.resolve('example/public/models/vocab.json');
+      const modelPath = path.resolve('website/public/models/model.tflite');
+      const vocabPath = path.resolve('website/public/models/vocab.json');
       const modelBuf = fs.readFileSync(modelPath).buffer;
       const vocab = JSON.parse(fs.readFileSync(vocabPath, 'utf8'));
 

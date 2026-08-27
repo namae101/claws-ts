@@ -18,8 +18,8 @@
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts --clean",
     "test": "vitest run",
-    "example": "vite --config vite.config.ts",
-    "example:build": "vite build --config vite.config.ts"
+    "website": "vite --config vite.config.ts",
+    "website:build": "vite build --config vite.config.ts"
   },
   "keywords": [
     "khmer",

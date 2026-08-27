@@ -3,7 +3,7 @@ node_modules/
 
 # Build outputs
 dist/
-dist-example/
+dist-website/
 
 # Test & Coverage
 coverage/
