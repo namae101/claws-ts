@@ -7,6 +7,31 @@ export const KHNUMBER = new Set('០១២៣៤៥៦៧៨៩0123456789');
 export const KHLUNAR = new Set('᧠᧡᧢᧣᧤᧥᧦᧧᧨᧩᧪᧫᧬᧭᧮᧯᧰᧱᧲᧳᧴᧵᧶᧷᧸᧹᧺᧻᧼᧽᧾᧿');
 export const EN_CHARS = new Set('abcdefghijklmnopqrstuvwxyz0123456789');
 
+/** Khmer-specific sentence & phrase punctuation (U+17D4..U+17DB). */
+export const KHMER_PUNCTUATION = new Set('។៕៚៙៘៖៛ៗ');
+
+/** Terminal punctuation: always closes a chunk (sentence boundary). */
+export const KHMER_SENTENCE_END = new Set(['។', '៕', '៚', '!', '?', '…', '\n', ';']);
+export const ALL_PUNCTUATION = new Set([
+  ...KHMER_PUNCTUATION,
+  '.', ',', '!', '?', ';', ':',
+  '(', ')', '[', ']', '{', '}',
+  '"', "'", '`', '«', '»', '“', '”', '‘', '’',
+  '-', '–', '—', '_', '/', '\\', '…',
+  '<', '>', '*', '&', '#', '@', '%', '+', '=', '|', '~', '^'
+]);
+
+/** True when a KCC token consists solely of whitespace or punctuation (a natural chunk boundary). */
+export function isChunkBoundaryToken(kcc: string): boolean {
+  if (kcc === ' ' || kcc === '\t' || kcc === '\n' || kcc === '\r' || kcc === '\u200b') return true;
+  for (let i = 0; i < kcc.length; i++) {
+    const ch = kcc[i]!;
+    if (!ALL_PUNCTUATION.has(ch) && ch !== ' ' && ch !== '\t' && ch !== '\n' && ch !== '\r') {
+      return false;
+    }
+  }
+  return kcc.length > 0;
+}
 export function isKhmerChar(ch: string): boolean {
   if (ch >= '\u1780' && ch <= '\u17ff') return true;
   if (KHSYM.has(ch)) return true;

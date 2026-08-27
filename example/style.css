@@ -19,6 +19,9 @@
   --status-loading: #d29922;
   --gpu-color: #58a6ff;
   --cpu-color: #f0883e;
+  --error-color: #f85149;
+  --error-bg: rgba(248, 81, 73, 0.15);
+  --error-border: rgba(248, 81, 73, 0.4);
   --font-khmer: 'Kantumruy Pro', 'Hanuman', 'Battambang', 'Khmer OS Siemreap', system-ui, -apple-system, sans-serif;
 }
 
@@ -28,11 +31,16 @@
   padding: 0;
 }
 
+html, body {
+  height: 100%;
+  overflow: hidden; /* Prevent page-level scrollbars */
+}
+
 body {
   font-family: var(--font-khmer);
   background-color: var(--bg-main);
   color: var(--text-primary);
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
 }
@@ -203,6 +211,7 @@ body {
   height: 100%;
   color: var(--text-secondary);
   font-size: 0.95rem;
+  min-height: 240px;
 }
 
 .progress-container {
@@ -221,6 +230,7 @@ body {
   width: 0%;
   transition: width 0.15s ease;
 }
+
 .metrics-badge {
   font-size: 0.8rem;
   color: var(--text-secondary);
@@ -285,20 +295,103 @@ body {
 
 /* Main Container: 2-Panel Grid */
 .main-content {
-  flex: 1;
+  flex: 1 1 0; /* Consume remaining flex space without exceeding viewport */
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1.5rem;
-  padding: 1.5rem;
+  gap: 1.25rem;
+  padding: 1.25rem;
   max-width: 1600px;
   margin: 0 auto;
   width: 100%;
+  min-height: 0; /* Crucial for nested scroll containers */
+  height: auto;
+  overflow: hidden;
 }
 
 @media (max-width: 900px) {
+  html, body {
+    overflow: auto; /* Allow natural touch scroll on small devices if needed */
+  }
+
   .main-content {
     grid-template-columns: 1fr;
+    padding: 0.75rem;
+    padding-bottom: 4.5rem; /* space for fixed mobile bottom nav */
+    height: auto;
+    min-height: calc(100vh - 180px);
+    overflow: visible;
   }
+
+  .panel-card {
+    display: none !important;
+    height: 100%;
+    min-height: 420px;
+  }
+
+  .panel-card.active-panel {
+    display: flex !important;
+  }
+
+  .mobile-bottom-nav {
+    display: flex !important;
+  }
+}
+
+/* Mobile Bottom Navigation Bar */
+.mobile-bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 60px;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border-color);
+  z-index: 900;
+  padding: 0 1rem;
+  align-items: center;
+  justify-content: space-around;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.mobile-nav-btn {
+  flex: 1;
+  max-width: 200px;
+  height: 44px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-family: var(--font-khmer);
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.mobile-nav-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.mobile-nav-btn.active {
+  color: var(--accent-blue-hover);
+  background: rgba(31, 111, 235, 0.15);
+  border: 1px solid rgba(31, 111, 235, 0.3);
+}
+
+.mobile-badge {
+  background: var(--accent-blue);
+  color: white;
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-family: monospace;
 }
 
 /* Panel Card */
@@ -308,8 +401,11 @@ body {
   border-radius: 10px;
   display: flex;
   flex-direction: column;
+  height: 100%;
+  min-height: 0; /* Crucial for inner scroll */
   overflow: hidden;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  position: relative;
 }
 
 .panel-header {
@@ -340,18 +436,28 @@ body {
   color: var(--text-primary);
 }
 
+.panel-badge.spell-error {
+  background: rgba(248, 81, 73, 0.2);
+  color: #ff7b72;
+  border: 1px solid rgba(248, 81, 73, 0.4);
+}
+
 .panel-body {
   flex: 1;
   padding: 1rem;
   display: flex;
   flex-direction: column;
-  min-height: 380px;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
 }
 
-/* Input Area */
+/* Scrollable Input Area */
 .text-input {
   flex: 1;
   width: 100%;
+  height: 100%;
+  min-height: 0;
   background: var(--bg-input);
   border: 1px solid var(--border-color);
   border-radius: 8px;
@@ -362,11 +468,67 @@ body {
   padding: 1rem;
   resize: none;
   outline: none;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) var(--bg-input);
   transition: border-color 0.2s ease;
 }
 
 .text-input:focus {
   border-color: var(--border-focus);
+}
+
+/* Scrollable Output Area */
+.output-container {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1rem;
+  overflow-y: scroll; /* Always reserve scrollbar gutter to prevent layout shift */
+  overflow-x: hidden;
+  scrollbar-gutter: stable; /* Modern browsers prevent width shift */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) var(--bg-input);
+}
+
+.output-container.scroll-locked {
+  /* Keep scrollbar visible and size constant, lock scroll via pointer/wheel */
+  touch-action: none;
+}
+
+.tokens-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-content: flex-start;
+  width: 100%;
+}
+
+/* Custom Scrollbars for WebKit */
+.text-input::-webkit-scrollbar,
+.output-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.text-input::-webkit-scrollbar-track,
+.output-container::-webkit-scrollbar-track {
+  background: var(--bg-input);
+  border-radius: 4px;
+}
+
+.text-input::-webkit-scrollbar-thumb,
+.output-container::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+.text-input::-webkit-scrollbar-thumb:hover,
+.output-container::-webkit-scrollbar-thumb:hover {
+  background: #8b949e;
 }
 
 .panel-footer {
@@ -376,6 +538,15 @@ body {
   justify-content: space-between;
   align-items: center;
   background: var(--bg-card-header);
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.footer-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 
 .btn-primary {
@@ -428,6 +599,8 @@ body {
   gap: 0.5rem;
   font-size: 0.85rem;
   color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
 }
 
 .toggle-group input[type="checkbox"] {
@@ -493,17 +666,112 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  position: relative;
 }
-
 .token-chip:hover {
   background: rgba(56, 139, 253, 0.25);
   border-color: #58a6ff;
-  transform: translateY(-1px);
+}
+.token-chip.misspelled {
+  background: var(--error-bg);
+  border-color: var(--error-border);
+  color: var(--error-color);
+  text-decoration: underline wavy var(--error-color);
+  text-underline-offset: 4px;
+}
+
+.token-chip.misspelled:hover {
+  background: rgba(248, 81, 73, 0.25);
+  border-color: #ff7b72;
 }
 
 .token-index {
   font-size: 0.65rem;
   color: var(--text-muted);
+  font-family: monospace;
+}
+
+.spell-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--error-color);
+  margin-left: 2px;
+}
+
+/* Suggestion Popover */
+.suggestion-popover {
+  position: fixed;
+  display: none;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  padding: 0.5rem;
+  z-index: 1000;
+  max-width: 320px;
+  width: max-content;
+  font-family: var(--font-khmer);
+}
+
+.suggestion-popover.show {
+  display: block;
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.suggestion-header {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding: 0.25rem 0.5rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 0.35rem;
+  display: flex;
+  justify-content: space-between;
+}
+
+.suggestion-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.suggestion-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 0.6rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  transition: all 0.15s ease;
+  gap: 0.75rem;
+}
+
+.suggestion-item:hover {
+  background: rgba(56, 139, 253, 0.2);
+  color: #79c0ff;
+}
+
+.no-suggestions {
+  padding: 0.6rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-align: center;
+  font-style: italic;
+}
+
+.suggestion-type {
+  font-size: 0.65rem;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
   font-family: monospace;
 }
 

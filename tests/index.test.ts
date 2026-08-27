@@ -9,7 +9,10 @@ import {
   isStartOfKcc,
   patchTFLiteDynamicShapes,
   GLNNModel,
-  chunkKccs
+  chunkKccs,
+  normalize,
+  spellChecker,
+  KhmerSpellChecker
 } from '../src/index';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -240,6 +243,88 @@ describe('Segmenter', () => {
       expect(words.length).toBeGreaterThan(10);
       expect(progressReports.length).toBeGreaterThan(1);
       expect(progressReports[progressReports.length - 1].percentage).toBe(100);
+    });
+  });
+
+  describe('Unicode Normalization (betterkhmer)', () => {
+    it('normalizes out-of-order Khmer vowels and subscripts', () => {
+      expect(normalize('ខែ្មរ')).toBe('ខ្មែរ');
+      expect(normalize('ខ្មែរ')).toBe('ខ្មែរ');
+    });
+
+    it('removes invisible zero-width spaces', () => {
+      expect(normalize('ខ្ញុំ\u200Bស្រឡាញ់\u200Cកម្ពុជា\uFEFF')).toBe('ខ្ញុំស្រឡាញ់កម្ពុជា');
+    });
+
+    it('replaces Khmer punctuation and symbols with regular space', () => {
+      expect(normalize('កម្ពុជា។ ស្រឡាញ់៕ សួស្តី៖ បាទ៚')).toBe('កម្ពុជា ស្រឡាញ់ សួស្តី បាទ ');
+    });
+  });
+
+  describe('Spell Checking & Multi-Strategy Suggestions', () => {
+    it('initializes dictionary and checks correct and misspelled words', async () => {
+      await spellChecker.init();
+
+      expect(spellChecker.getWordCount()).toBeGreaterThan(1000);
+
+      // Correct word
+      const correctResult = spellChecker.checkWord('ខ្ញុំ');
+      expect(correctResult.is_correct).toBe(true);
+      expect(correctResult.suggestions).toEqual([]);
+
+      // Misspelled word
+      const misspelledResult = spellChecker.checkWord('ម៉ាល់', 5);
+      expect(misspelledResult.is_correct).toBe(false);
+      expect(misspelledResult.suggestions.length).toBeGreaterThan(0);
+
+      // Non-word / numbers / punctuation
+      expect(spellChecker.checkWord('123').is_correct).toBe(true);
+      expect(spellChecker.checkWord('។').is_correct).toBe(true);
+    });
+
+    it('finds suffix suggestions via Reverse Suffix Trie', async () => {
+      await spellChecker.init();
+      const suffixes = spellChecker.suggestSuffix('វិទ្យា', 5);
+      expect(suffixes.length).toBeGreaterThan(0);
+      expect(suffixes[0].word).toBe('វិទ្យា');
+      expect(suffixes.some(s => s.word.endsWith('វិទ្យា'))).toBe(true);
+    });
+
+    it('finds prefix suggestions via Prefix Trie', async () => {
+      await spellChecker.init();
+      const prefixes = spellChecker.suggestPrefix('កម្ពុ', 5);
+      expect(prefixes.length).toBeGreaterThan(0);
+      expect(prefixes.some(p => p.word.startsWith('កម្ពុ'))).toBe(true);
+    });
+  });
+
+  describe('Khmer-aware chunking by space & punctuation', () => {
+    it('closes chunks at Khmer sentence punctuation regardless of size', () => {
+      const kccs = segKcc('សួស្តី! តើអ្នកសុខសប្បាយទេ? សូមអរគុណ។');
+      const chunks = chunkKccs(kccs, 60);
+
+      // 3 sentences (ending in !, ?, ។) -> exactly 3 chunks
+      expect(chunks.length).toBe(3);
+      expect(chunks[0]!.join('').endsWith('!')).toBe(true);
+      expect(chunks.some(c => c.join('').endsWith('?'))).toBe(true);
+      expect(chunks.some(c => c.join('').endsWith('។'))).toBe(true);
+      // No chunk exceeds the hard cap
+      for (const c of chunks) expect(c.length).toBeLessThanOrEqual(60);
+    });
+
+    it('batches short phrases together instead of splitting on every space', () => {
+      // 10 space-separated words: chunker batches them rather than creating 10 single-word chunks
+      const kccs = segKcc('ខ្ញុំ ស្រឡាញ់ ភាសា ខ្មែរ ព្រោះ វា ជា ភាសា មាត់ របស់ ខ្ញុំ');
+      const chunks = chunkKccs(kccs, 60, 25);
+      expect(chunks.length).toBeLessThanOrEqual(2);
+      expect(chunks.flat().join('')).toBe(kccs.join(''));
+    });
+
+    it('hard-splits unbroken runs longer than maxChunkSize', () => {
+      const kccs = segKcc('ក'.repeat(200));
+      const chunks = chunkKccs(kccs, 60);
+      expect(chunks.length).toBeGreaterThan(1);
+      for (const c of chunks) expect(c.length).toBeLessThanOrEqual(60);
     });
   });
 });

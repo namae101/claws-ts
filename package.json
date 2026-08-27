@@ -26,6 +26,10 @@
     "khmer-nlp",
     "tokenizer",
     "segmentation",
+    "spellcheck",
+    "spellchecker",
+    "normalization",
+    "betterkhmer",
     "wasm",
     "tflite",
     "glnn"

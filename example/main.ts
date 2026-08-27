@@ -1,40 +1,59 @@
 import '@tensorflow/tfjs-backend-webgl';
 import '@tensorflow/tfjs-backend-cpu';
 import * as tf from '@tensorflow/tfjs-core';
-import { Segmenter, segKcc } from '../src/index';
+import {
+  Segmenter,
+  segKcc,
+  chunkKccs,
+  normalize,
+  spellChecker,
+  WordSpellCheckResult
+} from '../src/index';
 
 type ViewMode = 'chips' | 'space' | 'zwsp' | 'json';
 
+interface TokenAnalysis {
+  token: string;
+  spellResult?: WordSpellCheckResult;
+}
+
 class AppController {
   private segmenter: Segmenter | null = null;
-  private currentTokens: string[] = [];
+  private currentTokens: TokenAnalysis[] = [];
   private currentMode: ViewMode = 'chips';
   private debounceTimer: number | null = null;
   private currentBackend: string = 'webgl';
-
-  // DOM Elements
   private statusBadge = document.getElementById('status-badge') as HTMLElement;
   private statusText = document.getElementById('status-text') as HTMLElement;
   private metricsBadge = document.getElementById('metrics-badge') as HTMLElement;
   private textInput = document.getElementById('text-input') as HTMLTextAreaElement;
   private inputStats = document.getElementById('input-stats') as HTMLElement;
   private outputStats = document.getElementById('output-stats') as HTMLElement;
+  private spellStats = document.getElementById('spell-stats') as HTMLElement;
   private outputContainer = document.getElementById('output-container') as HTMLElement;
   private btnSegment = document.getElementById('btn-segment') as HTMLButtonElement;
   private autoSegmentCheckbox = document.getElementById('auto-segment') as HTMLInputElement;
+  private toggleNormalize = document.getElementById('toggle-normalize') as HTMLInputElement;
+  private toggleSpellcheck = document.getElementById('toggle-spellcheck') as HTMLInputElement;
   private btnCopy = document.getElementById('btn-copy') as HTMLButtonElement;
   private toast = document.getElementById('toast') as HTMLElement;
+  private suggestionPopover = document.getElementById('suggestion-popover') as HTMLElement;
   private tabButtons = document.querySelectorAll<HTMLButtonElement>('.tab-btn');
   private presetButtons = document.querySelectorAll<HTMLButtonElement>('.btn-preset');
   private btnBackendWebgl = document.getElementById('btn-backend-webgl') as HTMLButtonElement;
   private btnBackendCpu = document.getElementById('btn-backend-cpu') as HTMLButtonElement;
+  private panelInput = document.getElementById('panel-input') as HTMLElement;
+  private panelOutput = document.getElementById('panel-output') as HTMLElement;
+  private tabInputBtn = document.getElementById('tab-input-btn') as HTMLButtonElement;
+  private tabOutputBtn = document.getElementById('tab-output-btn') as HTMLButtonElement;
+  private mobileOutputBadge = document.getElementById('mobile-output-badge') as HTMLElement;
 
   async init(): Promise<void> {
     this.bindEvents();
     this.updateInputStats();
 
     try {
-      // Prefer WebGL GPU acceleration if available, fallback to CPU
+      // 1. Initialize WebGL / CPU backend
       try {
         await tf.setBackend('webgl');
         await tf.ready();
@@ -47,13 +66,19 @@ class AppController {
       this.currentBackend = tf.getBackend();
       this.updateBackendUI();
 
-      this.statusText.textContent = 'Loading GNN Model...';
+      this.statusText.textContent = 'Loading GNN & Dictionary...';
       const startInit = performance.now();
 
-      this.segmenter = await Segmenter.create({
-        modelUrl: './models/model.tflite',
-        vocabUrlOrData: './models/vocab.json'
-      });
+      // 2. Initialize Segmenter & SpellChecker in parallel
+      const [segInstance] = await Promise.all([
+        Segmenter.create({
+          modelUrl: './models/model.tflite',
+          vocabUrlOrData: './models/vocab.json'
+        }),
+        spellChecker.init()
+      ]);
+
+      this.segmenter = segInstance;
 
       const initTime = (performance.now() - startInit).toFixed(0);
       this.statusBadge.classList.add('ready');
@@ -61,7 +86,8 @@ class AppController {
       this.btnSegment.disabled = false;
 
       const deviceLabel = this.currentBackend === 'webgl' ? '⚡ WebGL (GPU)' : '💻 CPU';
-      this.metricsBadge.innerHTML = `Loaded in <span class="highlight">${initTime}ms</span> • Engine: <span class="device-tag ${this.currentBackend === 'cpu' ? 'cpu' : ''}">${deviceLabel}</span>`;
+      const dictCount = spellChecker.getWordCount();
+      this.metricsBadge.innerHTML = `Loaded in <span class="highlight">${initTime}ms</span> • <span class="device-tag ${this.currentBackend === 'cpu' ? 'cpu' : ''}">${deviceLabel}</span> • Dictionary: <span class="highlight">${dictCount.toLocaleString()}</span> words`;
 
       // Initial segmentation
       await this.runSegmentation();
@@ -93,6 +119,14 @@ class AppController {
           this.runSegmentation();
         }, 120);
       }
+    });
+
+    this.toggleNormalize?.addEventListener('change', () => {
+      this.runSegmentation();
+    });
+
+    this.toggleSpellcheck?.addEventListener('change', () => {
+      this.runSegmentation();
     });
 
     // Keyboard shortcut (Ctrl+Enter / Cmd+Enter)
@@ -131,11 +165,49 @@ class AppController {
       });
     });
 
+    // Mobile Bottom Tab Navigation
+    this.tabInputBtn?.addEventListener('click', () => {
+      this.switchMobileTab('input');
+    });
+
+    this.tabOutputBtn?.addEventListener('click', () => {
+      this.switchMobileTab('output');
+    });
     // Copy Button
     this.btnCopy.addEventListener('click', () => {
       this.copyToClipboard();
     });
+
+    // Close popover when clicking outside
+    document.addEventListener('click', (e: MouseEvent) => {
+      if (!this.suggestionPopover.contains(e.target as Node) && !(e.target as HTMLElement).closest('.token-chip.misspelled')) {
+        this.hidePopover();
+      }
+    });
+    // Prevent output scroll when suggestion popover is open
+    this.outputContainer.addEventListener('wheel', this.wheelBlocker, { passive: false });
   }
+
+  private switchMobileTab(tab: 'input' | 'output'): void {
+    if (tab === 'input') {
+      this.panelInput?.classList.add('active-panel');
+      this.panelOutput?.classList.remove('active-panel');
+      this.tabInputBtn?.classList.add('active');
+      this.tabOutputBtn?.classList.remove('active');
+    } else {
+      this.panelOutput?.classList.add('active-panel');
+      this.panelInput?.classList.remove('active-panel');
+      this.tabOutputBtn?.classList.add('active');
+      this.tabInputBtn?.classList.remove('active');
+    }
+    this.hidePopover();
+  }
+
+  private wheelBlocker = (e: WheelEvent): void => {
+    if (this.suggestionPopover && this.suggestionPopover.classList.contains('show')) {
+      e.preventDefault();
+    }
+  };
 
   private async switchBackend(target: 'webgl' | 'cpu'): Promise<void> {
     if (this.currentBackend === target) return;
@@ -175,20 +247,26 @@ class AppController {
   private async runSegmentation(): Promise<void> {
     if (!this.segmenter) return;
 
-    const text = this.textInput.value.trim();
+    let text = this.textInput.value.trim();
     if (!text) {
       this.currentTokens = [];
       this.renderOutput();
       this.outputStats.textContent = '0 words';
+      this.spellStats.style.display = 'none';
       const isCpu = this.currentBackend === 'cpu';
       const deviceLabel = isCpu ? '💻 CPU' : '⚡ GPU (WebGL)';
       this.metricsBadge.innerHTML = `<span class="highlight">Latency:</span> 0 ms | 0 tokens <span class="device-tag ${isCpu ? 'cpu' : ''}">(${deviceLabel})</span>`;
       return;
     }
 
+    // Optional Unicode Normalization
+    if (this.toggleNormalize && this.toggleNormalize.checked) {
+      text = normalize(text);
+    }
+
     const allKccs = segKcc(text);
     const maxChunkSize = 60;
-    const totalChunks = Math.ceil(allKccs.length / maxChunkSize);
+    const totalChunks = chunkKccs(allKccs, maxChunkSize).length;
 
     // Set UI to loading state
     this.statusBadge.classList.add('processing');
@@ -211,7 +289,7 @@ class AppController {
     try {
       const startTime = performance.now();
 
-      const tokens = await this.segmenter.segment(text, {
+      const rawTokens = await this.segmenter.segment(text, {
         maxKccsPerChunk: maxChunkSize,
         onProgress: (progress) => {
           this.statusText.textContent = `Segmenting (${progress.current}/${progress.total})...`;
@@ -227,14 +305,41 @@ class AppController {
       });
 
       const elapsed = (performance.now() - startTime).toFixed(1);
-      this.currentTokens = tokens;
+
+      // Perform Spell Checking if enabled
+      const doSpellcheck = this.toggleSpellcheck ? this.toggleSpellcheck.checked : true;
+      let typoCount = 0;
+
+      this.currentTokens = rawTokens.map(tok => {
+        if (!doSpellcheck) {
+          return { token: tok };
+        }
+        const spellResult = spellChecker.checkWord(tok, 6, 5);
+        if (!spellResult.is_correct) {
+          typoCount++;
+        }
+        return {
+          token: tok,
+          spellResult
+        };
+      });
+
+      // Update Spell Stats badge
+      if (doSpellcheck && typoCount > 0) {
+        this.spellStats.style.display = 'inline-block';
+        this.spellStats.textContent = `${typoCount} typo${typoCount > 1 ? 's' : ''}`;
+      } else {
+        this.spellStats.style.display = 'none';
+      }
 
       const isCpu = this.currentBackend === 'cpu';
       const deviceLabel = isCpu ? '💻 CPU' : '⚡ GPU (WebGL)';
       const chunkInfo = totalChunks > 1 ? ` • ${totalChunks} chunks` : '';
-
-      this.metricsBadge.innerHTML = `<span class="highlight">Latency:</span> ${elapsed} ms | ${tokens.length} tokens <span class="device-tag ${isCpu ? 'cpu' : ''}">(${deviceLabel}${chunkInfo})</span>`;
-      this.outputStats.textContent = `${tokens.length} words`;
+      this.outputStats.textContent = `${rawTokens.length} words`;
+      if (this.mobileOutputBadge) {
+        this.mobileOutputBadge.style.display = rawTokens.length > 0 ? 'inline-block' : 'none';
+        this.mobileOutputBadge.textContent = String(rawTokens.length);
+      }
       this.renderOutput();
     } catch (err: unknown) {
       console.error('Segmentation error:', err);
@@ -246,11 +351,13 @@ class AppController {
       this.btnSegment.disabled = false;
     }
   }
+
   private setMode(mode: ViewMode): void {
     this.currentMode = mode;
     this.tabButtons.forEach(btn => {
       btn.classList.toggle('active', btn.dataset.mode === mode);
     });
+    this.hidePopover();
     this.renderOutput();
   }
 
@@ -268,15 +375,31 @@ class AppController {
       case 'chips': {
         const grid = document.createElement('div');
         grid.className = 'tokens-grid';
-        this.currentTokens.forEach((token, index) => {
+        this.currentTokens.forEach((item, index) => {
           const chip = document.createElement('span');
-          chip.className = 'token-chip';
-          chip.title = `Token #${index + 1}: ${token} (Click to copy)`;
-          chip.innerHTML = `<span>${this.escapeHtml(token)}</span><span class="token-index">${index + 1}</span>`;
-          chip.addEventListener('click', () => {
-            navigator.clipboard.writeText(token);
-            this.showToast(`Copied token: "${token}"`);
+          const isMisspelled = item.spellResult && !item.spellResult.is_correct;
+
+          chip.className = `token-chip ${isMisspelled ? 'misspelled' : ''}`;
+          chip.title = isMisspelled
+            ? `⚠️ Possible spelling mistake: "${item.token}". Click for suggestions!`
+            : `Token #${index + 1}: ${item.token} (Click to copy)`;
+
+          chip.innerHTML = `
+            <span>${this.escapeHtml(item.token)}</span>
+            <span class="token-index">${index + 1}</span>
+            ${isMisspelled ? '<span class="spell-dot"></span>' : ''}
+          `;
+
+          chip.addEventListener('click', (e: MouseEvent) => {
+            if (isMisspelled && item.spellResult) {
+              e.stopPropagation();
+              this.showPopover(chip, item.token, item.spellResult.suggestions || []);
+            } else {
+              navigator.clipboard.writeText(item.token);
+              this.showToast(`Copied token: "${item.token}"`);
+            }
           });
+
           grid.appendChild(chip);
         });
         this.outputContainer.innerHTML = '';
@@ -286,7 +409,7 @@ class AppController {
       case 'space': {
         const textElem = document.createElement('div');
         textElem.className = 'output-text';
-        textElem.textContent = this.currentTokens.join(' ');
+        textElem.textContent = this.currentTokens.map(t => t.token).join(' ');
         this.outputContainer.innerHTML = '';
         this.outputContainer.appendChild(textElem);
         break;
@@ -294,7 +417,7 @@ class AppController {
       case 'zwsp': {
         const textElem = document.createElement('div');
         textElem.className = 'output-text';
-        textElem.textContent = this.currentTokens.join('\u200b');
+        textElem.textContent = this.currentTokens.map(t => t.token).join('\u200b');
         this.outputContainer.innerHTML = '';
         this.outputContainer.appendChild(textElem);
         break;
@@ -302,12 +425,68 @@ class AppController {
       case 'json': {
         const codeElem = document.createElement('pre');
         codeElem.className = 'output-code';
-        codeElem.textContent = JSON.stringify(this.currentTokens, null, 2);
+        const formatted = this.currentTokens.map(t => ({
+          word: t.token,
+          is_correct: t.spellResult ? t.spellResult.is_correct : true,
+          suggestions: t.spellResult ? t.spellResult.suggestions : []
+        }));
+        codeElem.textContent = JSON.stringify(formatted, null, 2);
         this.outputContainer.innerHTML = '';
         this.outputContainer.appendChild(codeElem);
         break;
       }
     }
+  }
+
+  private showPopover(anchor: HTMLElement, originalWord: string, suggestions: string[]): void {
+    const rect = anchor.getBoundingClientRect();
+    const hasSuggestions = suggestions && suggestions.length > 0;
+
+    const listHtml = hasSuggestions
+      ? suggestions.slice(0, 6).map(s => `
+          <div class="suggestion-item" data-suggestion="${this.escapeHtml(s)}">
+            <span>${this.escapeHtml(s)}</span>
+            <span class="suggestion-type">Replace</span>
+          </div>
+        `).join('')
+      : `<div class="no-suggestions">No suggestions available</div>`;
+
+    this.suggestionPopover.innerHTML = `
+      <div class="suggestion-header">
+        <span>Suggestions for "${this.escapeHtml(originalWord)}"</span>
+      </div>
+      <div class="suggestion-list">
+        ${listHtml}
+      </div>
+    `;
+
+    this.suggestionPopover.classList.add('show');
+    this.outputContainer.classList.add('scroll-locked');
+    this.suggestionPopover.style.top = `${rect.bottom + 6}px`;
+    this.suggestionPopover.style.left = `${Math.max(10, Math.min(window.innerWidth - 300, rect.left))}px`;
+    const items = this.suggestionPopover.querySelectorAll<HTMLElement>('.suggestion-item');
+    items.forEach(el => {
+      el.addEventListener('click', () => {
+        const replacement = el.dataset.suggestion;
+        if (replacement) {
+          this.replaceWord(originalWord, replacement);
+        }
+      });
+    });
+  }
+
+  private hidePopover(): void {
+    this.suggestionPopover.classList.remove('show');
+    this.outputContainer.classList.remove('scroll-locked');
+  }
+  private replaceWord(originalWord: string, replacement: string): void {
+    const currentText = this.textInput.value;
+    const updated = currentText.replace(originalWord, replacement);
+    this.textInput.value = updated;
+    this.hidePopover();
+    this.updateInputStats();
+    this.showToast(`Replaced "${originalWord}" with "${replacement}"`);
+    this.runSegmentation();
   }
 
   private copyToClipboard(): void {
@@ -317,13 +496,13 @@ class AppController {
     switch (this.currentMode) {
       case 'chips':
       case 'space':
-        contentToCopy = this.currentTokens.join(' ');
+        contentToCopy = this.currentTokens.map(t => t.token).join(' ');
         break;
       case 'zwsp':
-        contentToCopy = this.currentTokens.join('\u200b');
+        contentToCopy = this.currentTokens.map(t => t.token).join('\u200b');
         break;
       case 'json':
-        contentToCopy = JSON.stringify(this.currentTokens, null, 2);
+        contentToCopy = JSON.stringify(this.currentTokens.map(t => t.token), null, 2);
         break;
     }
 

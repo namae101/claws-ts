@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>claws-ts • Khmer Word Segmentation</title>
+  <title>claws-ts • Khmer Word Segmentation & Spell Check</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Kantumruy+Pro:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
       <div class="brand-icon">ក</div>
       <div>
         <div class="brand-title">claws-ts</div>
-        <div class="brand-subtitle">Khmer GNN Word Segmentation</div>
+        <div class="brand-subtitle">Khmer GNN Segmentation & Spell Check</div>
       </div>
     </div>
     <div class="header-status">
@@ -48,6 +48,7 @@
   <div class="presets-bar">
     <span class="presets-label">Samples:</span>
     <button class="btn-preset" data-text="ខ្ញុំស្រឡាញ់ប្រទេសកម្ពុជា">ខ្ញុំស្រឡាញ់ប្រទេសកម្ពុជា</button>
+    <button class="btn-preset" data-text="ខ្ញុំ ម៉ាល់ ស្រឡាញ ភាសារខ្មែរ">🔍 Spell Check Demo (Typos)</button>
     <button class="btn-preset" data-text="សាកលវិទ្យាល័យភូមិន្ទភ្នំពេញ គឺជាគ្រឹះស្ថានឧត្តមសិក្សាដ៏ចំណាស់ជាងគេនៅកម្ពុជា។">សាកលវិទ្យាល័យភូមិន្ទភ្នំពេញ...</button>
     <button class="btn-preset" data-text="បច្ចេកវិទ្យាបញ្ញាសិប្បនិម្មិត (AI) កំពុងមានការរីកចម្រើនយ៉ាងឆាប់រហ័សនៅក្នុងយុគសម័យឌីជីថល ឆ្នាំ២០២៦។ ភាសាវិទ្យាគណនាបានដើរតួនាទីយ៉ាងសំខាន់ក្នុងការអភិវឌ្ឍន៍ភាសាជាតិខ្មែរលើប្រព័ន្ធបច្ចេកវិទ្យាទំនើប។">បច្ចេកវិទ្យា AI ឆ្នាំ២០២៦...</button>
     <button class="btn-preset" data-text="ព្រះរាជាណាចក្រកម្ពុជា គឺជាប្រទេសមួយស្ថិតនៅតំបន់អាស៊ីអាគ្នេយ៍ ដែលមានប្រវត្តិសាស្ត្រដ៏យូរលង់ និងសម្បូរបែប។ ប្រាសាទអង្គរវត្តគឺជាសម្បត្តិបេតិកភណ្ឌពិភពលោកដ៏ល្បីល្បាញ ដែលទាក់ទាញភ្ញៀវទេសចររាប់លាននាក់មកពីជុំវិញពិភពលោកជារៀងរាល់ឆ្នាំ។ លើសពីនេះទៅទៀត វប្បធម៌ ប្រពៃណី និងភាសាខ្មែរ គឺជាអត្តសញ្ញាណជាតិដ៏ពិសិដ្ឋដែលប្រជាពលរដ្ឋគ្រប់រូបត្រូវរួមគ្នាថែរក្សា និងអភិរក្សឱ្យបានគង់វង្សតរៀងទៅ។">📚 Large Article (Chunked)</button>
@@ -58,7 +59,7 @@
   <!-- Main 2-Panel Layout -->
   <main class="main-content">
     <!-- Left Panel: Input -->
-    <section class="panel-card">
+    <section class="panel-card active-panel" id="panel-input">
       <div class="panel-header">
         <div class="panel-title">
           <span>Input Text</span>
@@ -74,10 +75,20 @@
         >ខ្ញុំស្រឡាញ់ប្រទេសកម្ពុជា</textarea>
       </div>
       <div class="panel-footer">
-        <label class="toggle-group">
-          <input type="checkbox" id="auto-segment" checked>
-          <span>Auto-segment on type</span>
-        </label>
+        <div class="footer-controls">
+          <label class="toggle-group" title="Automatically segment as you type">
+            <input type="checkbox" id="auto-segment" checked>
+            <span>Auto-segment</span>
+          </label>
+          <label class="toggle-group" title="Normalize Khmer Unicode characters (vowels, subscripts)">
+            <input type="checkbox" id="toggle-normalize" checked>
+            <span>Normalize</span>
+          </label>
+          <label class="toggle-group" title="Enable dictionary-based spell checking and typo correction">
+            <input type="checkbox" id="toggle-spellcheck" checked>
+            <span>Spell Check</span>
+          </label>
+        </div>
         <button id="btn-segment" class="btn-primary" disabled>
           <span>Segment</span>
           <kbd style="font-size: 0.75rem; background: rgba(0,0,0,0.2); padding: 2px 4px; border-radius: 3px;">Ctrl+Enter</kbd>
@@ -86,11 +97,12 @@
     </section>
 
     <!-- Right Panel: Output -->
-    <section class="panel-card">
+    <section class="panel-card" id="panel-output">
       <div class="panel-header">
         <div class="panel-title">
           <span>Segmented Output</span>
           <span class="panel-badge" id="output-stats">0 words</span>
+          <span class="panel-badge spell-error" id="spell-stats" style="display: none;">0 typos</span>
         </div>
         <div class="view-mode-tabs">
           <button class="tab-btn active" data-mode="chips">Chips</button>
@@ -115,6 +127,28 @@
       </div>
     </section>
   </main>
+
+  <!-- Mobile Bottom Tab Navigation -->
+  <nav class="mobile-bottom-nav" id="mobile-bottom-nav">
+    <button class="mobile-nav-btn active" id="tab-input-btn" data-target="input">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 20h9"></path>
+        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+      </svg>
+      <span>Input</span>
+    </button>
+    <button class="mobile-nav-btn" id="tab-output-btn" data-target="output">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="4 7 4 4 20 4 20 7"></polyline>
+        <line x1="9" y1="20" x2="15" y2="20"></line>
+        <line x1="12" y1="4" x2="12" y2="20"></line>
+      </svg>
+      <span>Output</span>
+      <span class="mobile-badge" id="mobile-output-badge" style="display: none;">0</span>
+    </button>
+  </nav>
+  <!-- Interactive Suggestion Popover -->
+  <div id="suggestion-popover" class="suggestion-popover"></div>
 
   <!-- Toast Notification -->
   <div id="toast" class="toast">Copied to clipboard!</div>

@@ -5,23 +5,7 @@ import {
   segKcc,
   isKhmerChar,
   isStartOfKcc,
-  KHCONST,
-  KHVOWEL,
-  KHSUB,
-  KHDIAC,
-  KHSYM,
-  KHNUMBER,
-  KHLUNAR,
-  EN_CHARS
-} from './kccs';
-import type { GraphData } from './preprocessor';
-import { TextGraphEncoder } from './preprocessor';
-import { GLNNModel, GLNNWeights } from './glnn';
-
-export {
-  segKcc,
-  isKhmerChar,
-  isStartOfKcc,
+  isChunkBoundaryToken,
   KHCONST,
   KHVOWEL,
   KHSUB,
@@ -30,10 +14,63 @@ export {
   KHNUMBER,
   KHLUNAR,
   EN_CHARS,
+  KHMER_PUNCTUATION,
+  KHMER_SENTENCE_END,
+  ALL_PUNCTUATION
+} from './kccs';
+import type { GraphData } from './preprocessor';
+import { TextGraphEncoder } from './preprocessor';
+import { GLNNModel, GLNNWeights } from './glnn';
+import { normalize } from './betterkhmer/index.js';
+import {
+  KhmerSpellChecker,
+  spellChecker,
+  damerauLevenshteinDistance,
+  levenshteinDistance,
+  similarityRatio,
+  PrefixTrie,
+  TrieNode,
+} from './spellchecker/index.js';
+import type {
+  SuggestionItem,
+  WordSpellCheckResult,
+  KhmerSpellCheckerOptions,
+} from './spellchecker/index.js';
+
+export {
+  segKcc,
+  isKhmerChar,
+  isStartOfKcc,
+  isChunkBoundaryToken,
+  KHCONST,
+  KHVOWEL,
+  KHSUB,
+  KHDIAC,
+  KHSYM,
+  KHNUMBER,
+  KHLUNAR,
+  EN_CHARS,
+  KHMER_PUNCTUATION,
+  KHMER_SENTENCE_END,
+  ALL_PUNCTUATION,
   TextGraphEncoder,
-  GLNNModel
+  GLNNModel,
+  normalize,
+  KhmerSpellChecker,
+  spellChecker,
+  damerauLevenshteinDistance,
+  levenshteinDistance,
+  similarityRatio,
+  PrefixTrie,
+  TrieNode,
 };
-export type { GraphData, GLNNWeights };
+export type {
+  GraphData,
+  GLNNWeights,
+  SuggestionItem,
+  WordSpellCheckResult,
+  KhmerSpellCheckerOptions,
+};
 export interface SegmenterOptions {
   modelUrl: string | ArrayBuffer;
   vocabUrlOrData: string | string[];
@@ -48,23 +85,29 @@ export interface SegmentProgress {
 
 export interface SegmentOptions {
   maxKccsPerChunk?: number;
+  minKccsPerChunk?: number;
   onProgress?: (progress: SegmentProgress) => void;
 }
 
-export function chunkKccs(kccs: string[], maxChunkSize: number = 60): string[][] {
-  if (kccs.length <= maxChunkSize) return [kccs];
-
+export function chunkKccs(
+  kccs: string[],
+  maxChunkSize: number = 60,
+  minChunkSize: number = 25
+): string[][] {
   const chunks: string[][] = [];
   let current: string[] = [];
 
   for (let i = 0; i < kccs.length; i++) {
-    const kcc = kccs[i];
+    const kcc = kccs[i]!;
     current.push(kcc);
 
-    const isSentenceEnd = kcc === '។' || kcc === '៕' || kcc === '?' || kcc === '!' || kcc.includes('\n');
-    const isSpace = kcc === ' ';
+    // Sentence-ending punctuation always closes the chunk (Khmer ។ ៕ ៚ ! ? ; \n).
+    const isSentenceEnd = kcc.length <= 2 && [...kcc].some(c => KHMER_SENTENCE_END.has(c));
 
-    if (current.length >= maxChunkSize || (current.length >= 25 && (isSentenceEnd || isSpace))) {
+    // Spaces & other punctuation close only once the chunk is large enough,
+    // so short phrases batch together instead of triggering tiny inferences.
+    if (isSentenceEnd || current.length >= maxChunkSize ||
+        (isChunkBoundaryToken(kcc) && current.length >= minChunkSize)) {
       chunks.push(current);
       current = [];
     }
@@ -198,9 +241,9 @@ export class Segmenter {
     if (allKccs.length === 0) {
       return [];
     }
-
     const maxChunkSize = options?.maxKccsPerChunk ?? 60;
-    const chunks = chunkKccs(allKccs, maxChunkSize);
+    const minChunkSize = options?.minKccsPerChunk ?? 25;
+    const chunks = chunkKccs(allKccs, maxChunkSize, minChunkSize);
     const allTokens: string[] = [];
 
     for (let c = 0; c < chunks.length; c++) {
