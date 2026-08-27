@@ -1,0 +1,32 @@
+{
+  "name": "claws-ts",
+  "version": "0.1.0",
+  "description": "Fast and lightweight Khmer word segmentation using GNN in TypeScript/Wasm for Browser & Node",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "khmer",
+    "khmer-nlp",
+    "tokenizer",
+    "segmentation",
+    "wasm",
+    "tflite",
+    "glnn"
+  ],
+  "author": "Socret Lee",
+  "license": "MIT",
+  "dependencies": {
+    "@tensorflow/tfjs-core": "^4.9.0",
+    "@tensorflow/tfjs-tflite": "^0.0.1-alpha.10"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  }
+}
