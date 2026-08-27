@@ -17,7 +17,9 @@
   ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts --clean",
-    "test": "vitest run"
+    "test": "vitest run",
+    "example": "vite --config vite.config.ts",
+    "example:build": "vite build --config vite.config.ts"
   },
   "keywords": [
     "khmer",
@@ -31,13 +33,16 @@
   "author": "Mostly LLM",
   "license": "MIT",
   "dependencies": {
+    "@tensorflow/tfjs-backend-cpu": "^4.9.0",
+    "@tensorflow/tfjs-backend-webgl": "^4.9.0",
     "@tensorflow/tfjs-core": "^4.9.0",
     "@tensorflow/tfjs-tflite": "^0.0.1-alpha.10"
   },
   "devDependencies": {
-    "@tensorflow/tfjs-backend-cpu": "^4.9.0",
+    "@types/node": "^26.4.0",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
+    "vite": "^8.2.2",
     "vitest": "^4.1.11"
   }
 }

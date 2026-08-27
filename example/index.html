@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="km">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>claws-ts • Khmer Word Segmentation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kantumruy+Pro:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <!-- Header -->
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-icon">ក</div>
+      <div>
+        <div class="brand-title">claws-ts</div>
+        <div class="brand-subtitle">Khmer GNN Word Segmentation</div>
+      </div>
+    </div>
+    <div class="header-status">
+      <!-- Hardware Acceleration Switcher -->
+      <div class="backend-switcher" title="Toggle between WebGL GPU Acceleration and CPU Execution">
+        <span class="backend-label">Engine:</span>
+        <button class="backend-btn active gpu" id="btn-backend-webgl" data-backend="webgl">
+          <span class="backend-icon">⚡</span>
+          <span>GPU (WebGL)</span>
+        </button>
+        <button class="backend-btn cpu" id="btn-backend-cpu" data-backend="cpu">
+          <span class="backend-icon">💻</span>
+          <span>CPU</span>
+        </button>
+      </div>
+
+      <div class="status-badge" id="status-badge">
+        <div class="status-dot"></div>
+        <span id="status-text">Loading Model...</span>
+      </div>
+
+      <div class="metrics-badge" id="metrics-badge">
+        <span class="highlight">Latency:</span> -- ms | 0 tokens
+      </div>
+    </div>
+  </header>
+
+  <!-- Presets Bar -->
+  <div class="presets-bar">
+    <span class="presets-label">Samples:</span>
+    <button class="btn-preset" data-text="ខ្ញុំស្រឡាញ់ប្រទេសកម្ពុជា">ខ្ញុំស្រឡាញ់ប្រទេសកម្ពុជា</button>
+    <button class="btn-preset" data-text="សាកលវិទ្យាល័យភូមិន្ទភ្នំពេញ គឺជាគ្រឹះស្ថានឧត្តមសិក្សាដ៏ចំណាស់ជាងគេនៅកម្ពុជា។">សាកលវិទ្យាល័យភូមិន្ទភ្នំពេញ...</button>
+    <button class="btn-preset" data-text="បច្ចេកវិទ្យាបញ្ញាសិប្បនិម្មិត (AI) កំពុងមានការរីកចម្រើនយ៉ាងឆាប់រហ័សនៅក្នុងយុគសម័យឌីជីថល ឆ្នាំ២០២៦។ ភាសាវិទ្យាគណនាបានដើរតួនាទីយ៉ាងសំខាន់ក្នុងការអភិវឌ្ឍន៍ភាសាជាតិខ្មែរលើប្រព័ន្ធបច្ចេកវិទ្យាទំនើប។">បច្ចេកវិទ្យា AI ឆ្នាំ២០២៦...</button>
+    <button class="btn-preset" data-text="ព្រះរាជាណាចក្រកម្ពុជា គឺជាប្រទេសមួយស្ថិតនៅតំបន់អាស៊ីអាគ្នេយ៍ ដែលមានប្រវត្តិសាស្ត្រដ៏យូរលង់ និងសម្បូរបែប។ ប្រាសាទអង្គរវត្តគឺជាសម្បត្តិបេតិកភណ្ឌពិភពលោកដ៏ល្បីល្បាញ ដែលទាក់ទាញភ្ញៀវទេសចររាប់លាននាក់មកពីជុំវិញពិភពលោកជារៀងរាល់ឆ្នាំ។ លើសពីនេះទៅទៀត វប្បធម៌ ប្រពៃណី និងភាសាខ្មែរ គឺជាអត្តសញ្ញាណជាតិដ៏ពិសិដ្ឋដែលប្រជាពលរដ្ឋគ្រប់រូបត្រូវរួមគ្នាថែរក្សា និងអភិរក្សឱ្យបានគង់វង្សតរៀងទៅ។">📚 Large Article (Chunked)</button>
+    <button class="btn-preset" data-text="Hello ពិភពលោក! 123 សួស្តីឆ្នាំថ្មី។">Mixed English & Khmer</button>
+    <button class="btn-preset" data-clear="true" style="color: #f85149; margin-left: auto;">Clear</button>
+  </div>
+
+  <!-- Main 2-Panel Layout -->
+  <main class="main-content">
+    <!-- Left Panel: Input -->
+    <section class="panel-card">
+      <div class="panel-header">
+        <div class="panel-title">
+          <span>Input Text</span>
+        </div>
+        <span class="panel-badge" id="input-stats">0 chars • 0 KCCs</span>
+      </div>
+      <div class="panel-body">
+        <textarea
+          id="text-input"
+          class="text-input"
+          placeholder="បញ្ចូលអត្ថបទជាភាសាខ្មែរនៅទីនេះ... (Type or paste Khmer text here)"
+          spellcheck="false"
+        >ខ្ញុំស្រឡាញ់ប្រទេសកម្ពុជា</textarea>
+      </div>
+      <div class="panel-footer">
+        <label class="toggle-group">
+          <input type="checkbox" id="auto-segment" checked>
+          <span>Auto-segment on type</span>
+        </label>
+        <button id="btn-segment" class="btn-primary" disabled>
+          <span>Segment</span>
+          <kbd style="font-size: 0.75rem; background: rgba(0,0,0,0.2); padding: 2px 4px; border-radius: 3px;">Ctrl+Enter</kbd>
+        </button>
+      </div>
+    </section>
+
+    <!-- Right Panel: Output -->
+    <section class="panel-card">
+      <div class="panel-header">
+        <div class="panel-title">
+          <span>Segmented Output</span>
+          <span class="panel-badge" id="output-stats">0 words</span>
+        </div>
+        <div class="view-mode-tabs">
+          <button class="tab-btn active" data-mode="chips">Chips</button>
+          <button class="tab-btn" data-mode="space">Spaces</button>
+          <button class="tab-btn" data-mode="zwsp">Zero-Width</button>
+          <button class="tab-btn" data-mode="json">JSON</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div id="output-container" class="output-container">
+          <div class="tokens-grid" id="tokens-grid"></div>
+        </div>
+      </div>
+      <div class="panel-footer">
+        <button id="btn-copy" class="btn-secondary">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"></path>
+            <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"></path>
+          </svg>
+          <span>Copy Output</span>
+        </button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="toast">Copied to clipboard!</div>
+
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

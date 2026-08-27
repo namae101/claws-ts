@@ -6,8 +6,13 @@ import {
   TextGraphEncoder,
   segKcc,
   isKhmerChar,
-  isStartOfKcc
+  isStartOfKcc,
+  patchTFLiteDynamicShapes,
+  GLNNModel,
+  chunkKccs
 } from '../src/index';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 vi.mock('@tensorflow/tfjs-tflite', () => ({
   loadTFLiteModel: vi.fn(),
@@ -28,6 +33,13 @@ describe('Segmenter', () => {
       expect(typeof segKcc).toBe('function');
       expect(typeof isKhmerChar).toBe('function');
       expect(typeof isStartOfKcc).toBe('function');
+      expect(typeof patchTFLiteDynamicShapes).toBe('function');
+      expect(typeof chunkKccs).toBe('function');
+    });
+    it('safely handles short or invalid buffers in patchTFLiteDynamicShapes', () => {
+      const smallBuf = new ArrayBuffer(8);
+      const result = patchTFLiteDynamicShapes(smallBuf);
+      expect(result.byteLength).toBe(8);
     });
   });
 
@@ -145,6 +157,89 @@ describe('Segmenter', () => {
 
       const words = await segmenter.segment('កម្ពុជា');
       expect(words).toEqual(['កម្ពុជា']);
+    });
+
+    it('dynamically matches serving_default_*:0 input names from model metadata', async () => {
+      let receivedInputKeys: string[] = [];
+      const mockPredict = vi.fn().mockImplementation((inputs: Record<string, tf.Tensor>) => {
+        receivedInputKeys = Object.keys(inputs);
+        const numNodes = inputs['serving_default_node_types:0'].shape[0];
+        return {
+          output: tf.tensor2d([[10, 0, 0, 0]], [numNodes, 4])
+        };
+      });
+
+      vi.mocked(tflite.loadTFLiteModel).mockResolvedValue({
+        inputs: [
+          { name: 'serving_default_char_indices:0' },
+          { name: 'serving_default_char_to_node_map:0' },
+          { name: 'serving_default_node_types:0' },
+          { name: 'serving_default_edge_indices:0' },
+          { name: 'serving_default_edge_types:0' },
+          { name: 'serving_default_batch_ids:0' }
+        ],
+        predict: mockPredict
+      } as unknown as tflite.TFLiteModel);
+
+      const segmenter = await Segmenter.create({
+        modelUrl: 'dummy.tflite',
+        vocabUrlOrData: sampleVocab
+      });
+
+      const words = await segmenter.segment('ក');
+      expect(words).toEqual(['ក']);
+      expect(receivedInputKeys).toEqual([
+        'serving_default_char_indices:0',
+        'serving_default_char_to_node_map:0',
+        'serving_default_node_types:0',
+        'serving_default_edge_indices:0',
+        'serving_default_edge_types:0',
+        'serving_default_batch_ids:0'
+      ]);
+    });
+  });
+
+  describe('end-to-end with GLNN model FlatBuffer', () => {
+    it('segments real Khmer phrases using GLNNModel from model.tflite', async () => {
+      const modelPath = path.resolve('example/public/models/model.tflite');
+      const vocabPath = path.resolve('example/public/models/vocab.json');
+      const modelBuf = fs.readFileSync(modelPath).buffer;
+      const vocab = JSON.parse(fs.readFileSync(vocabPath, 'utf8'));
+
+      const segmenter = await Segmenter.create({
+        modelUrl: modelBuf,
+        vocabUrlOrData: vocab
+      });
+
+      const words = await segmenter.segment('ខ្ញុំស្រឡាញ់ប្រទេសកម្ពុជា');
+      expect(words).toEqual(['ខ្ញុំ', 'ស្រឡាញ់', 'ប្រទេស', 'កម្ពុជា']);
+
+      const words2 = await segmenter.segment('សាកលវិទ្យាល័យភូមិន្ទភ្នំពេញ');
+      expect(words2).toEqual(['សាកលវិទ្យាល័យ', 'ភូមិន្ទ', 'ភ្នំពេញ']);
+    });
+
+    it('splits large inputs into chunks and calls onProgress callback', async () => {
+      const modelPath = path.resolve('example/public/models/model.tflite');
+      const vocabPath = path.resolve('example/public/models/vocab.json');
+      const modelBuf = fs.readFileSync(modelPath).buffer;
+      const vocab = JSON.parse(fs.readFileSync(vocabPath, 'utf8'));
+
+      const segmenter = await Segmenter.create({
+        modelUrl: modelBuf,
+        vocabUrlOrData: vocab
+      });
+
+      const longText = 'សាកលវិទ្យាល័យភូមិន្ទភ្នំពេញ គឺជាគ្រឹះស្ថានឧត្តមសិក្សាដ៏ចំណាស់ជាងគេនៅកម្ពុជា។ ស្ថាប័ននេះត្រូវបានបង្កើតឡើងនៅក្នុងឆ្នាំ១៩៦០ និងមានតួនាទីយ៉ាងសំខាន់ក្នុងការបណ្តុះបណ្តាលធនធានមនុស្ស។';
+      const progressReports: Array<{ current: number; total: number; percentage: number }> = [];
+
+      const words = await segmenter.segment(longText, {
+        maxKccsPerChunk: 25,
+        onProgress: (p) => progressReports.push(p)
+      });
+
+      expect(words.length).toBeGreaterThan(10);
+      expect(progressReports.length).toBeGreaterThan(1);
+      expect(progressReports[progressReports.length - 1].percentage).toBe(100);
     });
   });
 });
