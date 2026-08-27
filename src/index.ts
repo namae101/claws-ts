@@ -1,7 +1,35 @@
 import * as tf from '@tensorflow/tfjs-core';
 import * as tflite from '@tensorflow/tfjs-tflite';
-import { segKcc } from './kccs';
-import { TextGraphEncoder } from './preprocessor';
+import {
+  segKcc,
+  isKhmerChar,
+  isStartOfKcc,
+  KHCONST,
+  KHVOWEL,
+  KHSUB,
+  KHDIAC,
+  KHSYM,
+  KHNUMBER,
+  KHLUNAR,
+  EN_CHARS
+} from './kccs';
+import { GraphData, TextGraphEncoder } from './preprocessor';
+
+export {
+  segKcc,
+  isKhmerChar,
+  isStartOfKcc,
+  KHCONST,
+  KHVOWEL,
+  KHSUB,
+  KHDIAC,
+  KHSYM,
+  KHNUMBER,
+  KHLUNAR,
+  EN_CHARS,
+  GraphData,
+  TextGraphEncoder
+};
 
 export interface SegmenterOptions {
   modelUrl: string | ArrayBuffer;
@@ -36,11 +64,7 @@ export class Segmenter {
     this.encoder = new TextGraphEncoder(vocab);
 
     // Load TFLite Model
-    if (typeof options.modelUrl === 'string') {
-      this.tfliteModel = await tflite.loadTFLiteModel(options.modelUrl);
-    } else {
-      this.tfliteModel = await tflite.loadTFLiteModel(options.modelUrl);
-    }
+    this.tfliteModel = await tflite.loadTFLiteModel(options.modelUrl);
   }
 
   async segment(text: string): Promise<string[]> {
@@ -48,11 +72,10 @@ export class Segmenter {
       throw new Error('Segmenter is not initialized. Call Segmenter.create(...) first.');
     }
 
-    const cleanedStr = text.replace(/\u200b/g, ' ').trim();
+    const cleanedStr = text.trim();
     if (!cleanedStr) {
       return [];
     }
-
     const kccs = segKcc(cleanedStr);
     const graph = this.encoder.encode(kccs, 0);
 
@@ -71,14 +94,11 @@ export class Segmenter {
 
     const outputTensors = this.tfliteModel.predict(inputs);
     const rawOutput = Object.values(outputTensors)[0] as tf.Tensor;
-    const argmaxOutput = rawOutput.argMax(-1);
+    const argmaxOutput = tf.argMax(rawOutput, -1);
     const yPred = await argmaxOutput.data();
 
     // Cleanup Tensors from memory
-    Object.values(inputs).forEach(t => t.dispose());
-    rawOutput.dispose();
-    argmaxOutput.dispose();
-
+    tf.dispose([inputs, outputTensors, argmaxOutput]);
     let formattedStr = '';
     kccs.forEach((chunk, i) => {
       const pred = yPred[i];

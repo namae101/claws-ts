@@ -7,7 +7,6 @@ export interface GraphData {
 }
 
 export class TextGraphEncoder {
-  private vocabSize: number;
   private vocabMap: Map<string, number>;
   private unkIndex: number;
   private directed: boolean;
@@ -16,13 +15,15 @@ export class TextGraphEncoder {
     vocab: string[],
     directed: boolean = true
   ) {
-    this.vocabSize = vocab.length;
     this.vocabMap = new Map();
     vocab.forEach((v, idx) => this.vocabMap.set(v, idx));
     this.unkIndex = this.vocabMap.get('<UNK/>') ?? 0;
     this.directed = directed;
   }
 
+  public get vocabSize(): number {
+    return this.vocabMap.size;
+  }
   public encode(kccs: string[], nodeOffset: number = 0): GraphData {
     const numKccs = kccs.length;
     const eKccPrev: number[][] = [];
