@@ -47,11 +47,17 @@ class AppController {
   private tabInputBtn = document.getElementById('tab-input-btn') as HTMLButtonElement;
   private tabOutputBtn = document.getElementById('tab-output-btn') as HTMLButtonElement;
   private mobileOutputBadge = document.getElementById('mobile-output-badge') as HTMLElement;
+  private btnAck = document.getElementById('btn-ack') as HTMLButtonElement;
+  private ackDialog = document.getElementById('ack-dialog') as HTMLDialogElement;
+  private btnCloseDialog = document.getElementById('btn-close-dialog') as HTMLButtonElement;
+  private btnDialogDone = document.getElementById('btn-dialog-done') as HTMLButtonElement;
+  private btnTheme = document.getElementById('btn-theme') as HTMLButtonElement;
+  private currentTheme: 'light' | 'dark' = 'light';
 
   async init(): Promise<void> {
+    this.initTheme();
     this.bindEvents();
     this.updateInputStats();
-
     try {
       // 1. Initialize WebGL / CPU backend
       try {
@@ -202,6 +208,53 @@ class AppController {
     });
     // Prevent output scroll when suggestion popover is open
     this.outputContainer.addEventListener('wheel', this.wheelBlocker, { passive: false });
+
+    // Theme Toggle
+    this.btnTheme?.addEventListener('click', () => {
+      this.toggleTheme();
+    });
+
+    // Acknowledgments Dialog
+    this.btnAck?.addEventListener('click', () => {
+      this.ackDialog?.showModal();
+    });
+
+    this.btnCloseDialog?.addEventListener('click', () => {
+      this.ackDialog?.close();
+    });
+
+    this.btnDialogDone?.addEventListener('click', () => {
+      this.ackDialog?.close();
+    });
+
+    // Close dialog if backdrop is clicked
+    this.ackDialog?.addEventListener('click', (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target === this.ackDialog) {
+        this.ackDialog.close();
+      }
+    });
+  }
+
+  private initTheme(): void {
+    const saved = localStorage.getItem('claws_theme') as 'light' | 'dark' | null;
+    this.setTheme(saved || 'light');
+  }
+
+  private setTheme(theme: 'light' | 'dark'): void {
+    this.currentTheme = theme;
+    if (theme === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+    }
+    localStorage.setItem('claws_theme', theme);
+  }
+
+  private toggleTheme(): void {
+    const next = this.currentTheme === 'dark' ? 'light' : 'dark';
+    this.setTheme(next);
+    this.showToast(`Switched to ${next} mode`);
   }
 
   private switchMobileTab(tab: 'input' | 'output'): void {
@@ -480,8 +533,15 @@ class AppController {
 
     this.suggestionPopover.classList.add('show');
     this.outputContainer.classList.add('scroll-locked');
-    this.suggestionPopover.style.top = `${rect.bottom + 6}px`;
-    this.suggestionPopover.style.left = `${Math.max(10, Math.min(window.innerWidth - 300, rect.left))}px`;
+    const popoverWidth = Math.min(300, window.innerWidth - 24);
+    const popoverHeight = 220;
+    let left = Math.max(12, Math.min(window.innerWidth - popoverWidth - 12, rect.left));
+    let top = rect.bottom + 6;
+    if (top + popoverHeight > window.innerHeight - 60) {
+      top = Math.max(12, rect.top - popoverHeight - 6);
+    }
+    this.suggestionPopover.style.top = `${top}px`;
+    this.suggestionPopover.style.left = `${left}px`;
     const items = this.suggestionPopover.querySelectorAll<HTMLElement>('.suggestion-item');
     items.forEach(el => {
       el.addEventListener('click', () => {
