@@ -1,5 +1,7 @@
 # claws-ts
 
+> **Disclaimer:** This project was developed mostly with AI, mixing and matching open-source tools and libraries for simple tasks. All NLP processing (segmentation, spell checking, Unicode normalization) runs 100% locally client-side in browser memory with zero remote server dependencies.
+
 Fast and lightweight Khmer word segmentation using Graph Neural Networks (GNN) in TypeScript / WebAssembly for In-Browser & Node.js execution.
 
 Port of [claws](https://github.com/Socret360/claws) (Python) to TypeScript running client-side with `@tensorflow/tfjs-tflite`.

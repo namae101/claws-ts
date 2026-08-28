@@ -51,6 +51,15 @@
         </svg>
         <span>Wordlist</span>
       </button>
+
+      <!-- Custom Words Manager Button -->
+      <button id="btn-custom-words" class="btn-custom-words" title="Manage, Import & Export Custom Words">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+        </svg>
+        <span>Custom Words</span>
+        <span class="custom-words-badge" id="custom-words-count" style="display: none;">0</span>
+      </button>
       <!-- Acknowledgments / Credits Button -->
       <button id="btn-ack" class="btn-ack" title="Acknowledgments & Open Source Credits">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -241,14 +250,20 @@
               <div class="project-name">betterkhmer</div>
               <span class="project-tag tag-norm">Normalization</span>
             </div>
-            <div class="project-author">By <strong>SIL Global</strong></div>
+            <div class="project-author">By <strong>SIL Global</strong> & <strong>Seanghay Yath</strong></div>
             <div class="project-desc">
               Fast, deterministic Khmer Unicode reordering algorithm that corrects vowel and subscript ordering according to Khmer orthography without regular expressions.
             </div>
-            <a class="project-link" href="https://github.com/silnrsi/betterkhmer" target="_blank" rel="noopener noreferrer">
-              <span>GitHub Repository</span>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-            </a>
+            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+              <a class="project-link" href="https://github.com/silnrsi/betterkhmer" target="_blank" rel="noopener noreferrer">
+                <span>SIL Repository</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+              </a>
+              <a class="project-link" href="https://github.com/seanghay/betterkhmer" target="_blank" rel="noopener noreferrer">
+                <span>seanghay/betterkhmer</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+              </a>
+            </div>
           </div>
 
           <div class="project-card">
@@ -326,8 +341,6 @@
         <div class="dict-filters-row">
           <div class="dict-filter-modes">
             <button class="dict-filter-pill active" data-dict-mode="contains">Contains</button>
-            <button class="dict-filter-pill" data-dict-mode="prefix">Starts With</button>
-            <button class="dict-filter-pill" data-dict-mode="suffix">Ends With</button>
             <button class="dict-filter-pill" data-dict-mode="fuzzy">Fuzzy / Typo</button>
             <button class="dict-filter-pill" data-dict-mode="exact">Exact</button>
           </div>
@@ -360,6 +373,63 @@
 
       <div class="dialog-footer">
         <button id="btn-dict-done" class="btn-primary">Done</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Custom Wordlist Manager Dialog -->
+  <dialog id="custom-words-dialog" class="custom-words-dialog">
+    <div class="dialog-content">
+      <div class="dialog-header">
+        <div class="dialog-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+          </svg>
+          <span>Custom Wordlist Manager</span>
+        </div>
+        <button id="btn-close-custom-dialog" class="btn-close-dialog" aria-label="Close dialog">✕</button>
+      </div>
+
+      <div class="custom-dialog-toolbar">
+        <div class="custom-add-wrapper">
+          <input type="text" id="custom-add-input" class="custom-add-input" placeholder="Enter new Khmer word to add..." spellcheck="false" autocomplete="off">
+          <button id="btn-custom-add" class="btn-primary">
+            <span>+ Add Word</span>
+          </button>
+        </div>
+
+        <div class="custom-actions-row">
+          <div class="custom-actions-group">
+            <!-- Hidden file input for import -->
+            <input type="file" id="custom-import-file" accept=".txt,.json" style="display: none;">
+            <button id="btn-custom-import" class="btn-secondary" title="Import words from .txt or .json file">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              <span>Import Words</span>
+            </button>
+            <button id="btn-custom-export" class="btn-secondary" title="Export custom words to .txt or .json">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+              <span>Export Words</span>
+            </button>
+          </div>
+
+          <button id="btn-custom-clear-all" class="btn-secondary btn-danger-text" title="Remove all custom words">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            <span>Clear All</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="dict-stats-bar">
+        <span id="custom-stats-text">0 custom words saved in localStorage</span>
+        <span class="dict-help-tip">Words are stored locally in your browser</span>
+      </div>
+
+      <div class="custom-words-body" id="custom-words-container">
+        <div class="custom-words-grid" id="custom-words-grid"></div>
+      </div>
+
+      <div class="dialog-footer">
+        <button id="btn-custom-dialog-done" class="btn-primary">Done</button>
       </div>
     </div>
   </dialog>

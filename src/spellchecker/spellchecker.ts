@@ -200,6 +200,16 @@ export class KhmerSpellChecker {
     return added;
   }
 
+  public addWord(word: string, freq?: number): boolean {
+    const normWord = normalize(word.trim());
+    if (normWord && isKhmerText(normWord) && !this.words.has(normWord)) {
+      this.indexWord(normWord, freq);
+      this.recomputeTotalFreq();
+      return true;
+    }
+    return false;
+  }
+
   public addWords(words: string[]): number {
     let count = 0;
     for (const w of words) {

@@ -66,13 +66,28 @@ class AppController {
   private dictWordsGrid = document.getElementById('dict-words-grid') as HTMLElement;
   private dictLoadMore = document.getElementById('dict-load-more') as HTMLElement;
   private btnDictLoadMore = document.getElementById('btn-dict-load-more') as HTMLButtonElement;
+  private btnCustomWords = document.getElementById('btn-custom-words') as HTMLButtonElement;
+  private customWordsCount = document.getElementById('custom-words-count') as HTMLElement;
+  private customWordsDialog = document.getElementById('custom-words-dialog') as HTMLDialogElement;
+  private btnCloseCustomDialog = document.getElementById('btn-close-custom-dialog') as HTMLButtonElement;
+  private btnCustomDialogDone = document.getElementById('btn-custom-dialog-done') as HTMLButtonElement;
+  private customAddInput = document.getElementById('custom-add-input') as HTMLInputElement;
+  private btnCustomAdd = document.getElementById('btn-custom-add') as HTMLButtonElement;
+  private customImportFile = document.getElementById('custom-import-file') as HTMLInputElement;
+  private btnCustomImport = document.getElementById('btn-custom-import') as HTMLButtonElement;
+  private btnCustomExport = document.getElementById('btn-custom-export') as HTMLButtonElement;
+  private btnCustomClearAll = document.getElementById('btn-custom-clear-all') as HTMLButtonElement;
+  private customStatsText = document.getElementById('custom-stats-text') as HTMLElement;
+  private customWordsGrid = document.getElementById('custom-words-grid') as HTMLElement;
+  private customWordsList: string[] = [];
 
-  private dictCurrentMode: 'contains' | 'prefix' | 'suffix' | 'fuzzy' | 'exact' = 'contains';
+  private dictCurrentMode: 'contains' | 'fuzzy' | 'exact' = 'contains';
   private dictCurrentOffset: number = 0;
   private dictPageSize: number = 80;
   private dictSearchDebounce: number | null = null;
   private btnTheme = document.getElementById('btn-theme') as HTMLButtonElement;
   private currentTheme: 'light' | 'dark' = 'light';
+  private sessionIgnoredWords: Set<string> = new Set();
 
   async init(): Promise<void> {
     this.initTheme();
@@ -104,6 +119,7 @@ class AppController {
         spellChecker.init()
       ]);
 
+      this.loadCustomDictionary();
       this.segmenter = segInstance;
 
       const initTime = (performance.now() - startInit).toFixed(0);
@@ -301,7 +317,7 @@ class AppController {
         this.dictFilterPills.forEach(p => p.classList.remove('active'));
         pill.classList.add('active');
         const mode = pill.dataset.dictMode;
-        if (mode === 'prefix' || mode === 'suffix' || mode === 'fuzzy' || mode === 'exact' || mode === 'contains') {
+        if (mode === 'fuzzy' || mode === 'exact' || mode === 'contains') {
           this.dictCurrentMode = mode;
         } else {
           this.dictCurrentMode = 'contains';
@@ -316,6 +332,58 @@ class AppController {
 
     this.btnDictLoadMore?.addEventListener('click', () => {
       this.renderDictWords(false);
+    });
+
+    // Custom Words Manager
+    this.btnCustomWords?.addEventListener('click', () => {
+      this.openCustomWordsDialog();
+    });
+
+    this.btnCloseCustomDialog?.addEventListener('click', () => {
+      this.customWordsDialog?.close();
+    });
+
+    this.btnCustomDialogDone?.addEventListener('click', () => {
+      this.customWordsDialog?.close();
+    });
+
+    this.customWordsDialog?.addEventListener('click', (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target === this.customWordsDialog) {
+        this.customWordsDialog.close();
+      }
+    });
+
+    this.btnCustomAdd?.addEventListener('click', () => {
+      this.handleAddCustomWord();
+    });
+
+    this.customAddInput?.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        this.handleAddCustomWord();
+      }
+    });
+
+    this.btnCustomExport?.addEventListener('click', () => {
+      this.exportCustomWords();
+    });
+
+    this.btnCustomImport?.addEventListener('click', () => {
+      this.customImportFile?.click();
+    });
+
+    this.customImportFile?.addEventListener('change', (e: Event) => {
+      const input = e.target as HTMLInputElement;
+      const file = input.files?.[0];
+      if (file) {
+        this.importCustomWords(file);
+      }
+      input.value = '';
+    });
+
+    this.btnCustomClearAll?.addEventListener('click', () => {
+      this.clearAllCustomWords();
     });
   }
 
@@ -561,9 +629,14 @@ class AppController {
           end = foundPos + tok.length;
           searchCursor = end;
         }
-
-        if (!doSpellcheck) {
-          return { token: tok, tokenIndex, startIndex: start, endIndex: end };
+        if (!doSpellcheck || this.sessionIgnoredWords.has(tok)) {
+          return {
+            token: tok,
+            tokenIndex,
+            startIndex: start,
+            endIndex: end,
+            spellResult: { word: tok, normalized_word: tok, is_correct: true, suggestions: [] }
+          };
         }
         const spellResult = spellChecker.checkWord(tok, 6, 5);
         if (spellResult && !spellResult.is_correct) {
@@ -712,6 +785,16 @@ class AppController {
       <div class="suggestion-list">
         ${listHtml}
       </div>
+      <div class="popover-actions">
+        <button class="btn-popover-action btn-popover-ignore" data-action="ignore">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+          <span>Ignore for this session</span>
+        </button>
+        <button class="btn-popover-action btn-popover-add" data-action="add">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+          <span>Add to custom dictionary</span>
+        </button>
+      </div>
     `;
 
     this.suggestionPopover.classList.add('show');
@@ -733,6 +816,18 @@ class AppController {
           this.replaceWord(tokenItem, replacement);
         }
       });
+    });
+
+    const btnIgnore = this.suggestionPopover.querySelector<HTMLElement>('.btn-popover-ignore');
+    btnIgnore?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.ignoreWordForSession(tokenItem.token);
+    });
+
+    const btnAdd = this.suggestionPopover.querySelector<HTMLElement>('.btn-popover-add');
+    btnAdd?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.addWordToCustomDictionary(tokenItem.token);
     });
   }
 
@@ -811,6 +906,228 @@ class AppController {
     // 5. In-place re-render without neural network re-segmentation
     this.renderOutput();
     this.showToast(`Replaced "${oldToken}" with "${replacement}"`);
+  }
+
+  private loadCustomDictionary(): void {
+    try {
+      const saved = localStorage.getItem('claws_custom_words');
+      if (saved) {
+        const words = JSON.parse(saved) as string[];
+        if (Array.isArray(words)) {
+          this.customWordsList = words;
+          spellChecker.addWords(words);
+          this.updateCustomWordsCountBadge();
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load custom dictionary:', e);
+    }
+  }
+
+  private updateCustomWordsCountBadge(): void {
+    if (this.customWordsCount) {
+      const count = this.customWordsList.length;
+      this.customWordsCount.style.display = count > 0 ? 'inline-block' : 'none';
+      this.customWordsCount.textContent = String(count);
+    }
+    if (this.customStatsText) {
+      const count = this.customWordsList.length;
+      this.customStatsText.textContent = `${count} custom word${count === 1 ? '' : 's'} saved in localStorage`;
+    }
+  }
+
+  private openCustomWordsDialog(): void {
+    this.customWordsDialog?.showModal();
+    this.customAddInput?.focus();
+    this.renderCustomWordsList();
+  }
+
+  private renderCustomWordsList(): void {
+    if (!this.customWordsGrid) return;
+    this.updateCustomWordsCountBadge();
+
+    if (this.customWordsList.length === 0) {
+      this.customWordsGrid.innerHTML = `
+        <div class="custom-empty-state">
+          <span>No custom words added yet.</span>
+          <span style="font-size: 0.8rem; color: var(--text-muted);">Add new words above or click "Add to custom dictionary" in spell check suggestions.</span>
+        </div>
+      `;
+      return;
+    }
+
+    this.customWordsGrid.innerHTML = '';
+    const fragment = document.createDocumentFragment();
+
+    this.customWordsList.forEach((word) => {
+      const card = document.createElement('div');
+      card.className = 'custom-word-card';
+      card.innerHTML = `
+        <span class="custom-word-text">${this.escapeHtml(word)}</span>
+        <button class="btn-remove-word" title="Remove word">✕</button>
+      `;
+      const btnRemove = card.querySelector('.btn-remove-word');
+      btnRemove?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.removeCustomWord(word);
+      });
+      fragment.appendChild(card);
+    });
+
+    this.customWordsGrid.appendChild(fragment);
+  }
+
+  private handleAddCustomWord(): void {
+    const word = this.customAddInput?.value.trim();
+    if (!word) return;
+    this.addWordToCustomDictionary(word);
+    if (this.customAddInput) {
+      this.customAddInput.value = '';
+      this.customAddInput.focus();
+    }
+    this.renderCustomWordsList();
+  }
+
+  private addWordToCustomDictionary(word: string): void {
+    const norm = normalize(word.trim());
+    if (!norm) return;
+
+    spellChecker.addWord(norm);
+    this.sessionIgnoredWords.add(norm);
+
+    if (!this.customWordsList.includes(norm)) {
+      this.customWordsList.push(norm);
+      try {
+        localStorage.setItem('claws_custom_words', JSON.stringify(this.customWordsList));
+      } catch (e) {
+        console.warn('Failed to save to localStorage:', e);
+      }
+    }
+
+    this.updateCustomWordsCountBadge();
+    this.markWordAsCorrectInSession(norm);
+    this.hidePopover();
+    this.showToast(`Added "${norm}" to custom dictionary`);
+  }
+
+  private removeCustomWord(word: string): void {
+    this.customWordsList = this.customWordsList.filter(w => w !== word);
+    try {
+      localStorage.setItem('claws_custom_words', JSON.stringify(this.customWordsList));
+    } catch (e) {
+      console.warn('Failed to save to localStorage:', e);
+    }
+    this.updateCustomWordsCountBadge();
+    this.renderCustomWordsList();
+    this.showToast(`Removed "${word}" from custom dictionary`);
+  }
+
+  private clearAllCustomWords(): void {
+    if (this.customWordsList.length === 0) return;
+    if (!confirm('Are you sure you want to clear all custom words?')) return;
+    this.customWordsList = [];
+    try {
+      localStorage.removeItem('claws_custom_words');
+    } catch (e) {
+      console.warn('Failed to clear localStorage:', e);
+    }
+    this.updateCustomWordsCountBadge();
+    this.renderCustomWordsList();
+    this.showToast('Cleared all custom words');
+  }
+
+  private exportCustomWords(): void {
+    if (this.customWordsList.length === 0) {
+      this.showToast('No custom words to export');
+      return;
+    }
+    const content = this.customWordsList.join('\n');
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `khmer_custom_words_${new Date().toISOString().slice(0, 10)}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    this.showToast(`Exported ${this.customWordsList.length} custom words`);
+  }
+
+  private async importCustomWords(file: File): Promise<void> {
+    try {
+      const text = await file.text();
+      let importedWords: string[] = [];
+
+      if (file.name.endsWith('.json')) {
+        try {
+          const parsed = JSON.parse(text);
+          if (Array.isArray(parsed)) {
+            importedWords = parsed.map(w => typeof w === 'string' ? w : (w?.word || '')).filter(Boolean);
+          }
+        } catch {
+          importedWords = text.split('\n');
+        }
+      } else {
+        importedWords = text.split('\n');
+      }
+
+      let addedCount = 0;
+      for (const raw of importedWords) {
+        const norm = normalize(raw.trim());
+        if (norm && !this.customWordsList.includes(norm)) {
+          this.customWordsList.push(norm);
+          spellChecker.addWord(norm);
+          this.sessionIgnoredWords.add(norm);
+          this.markWordAsCorrectInSession(norm);
+          addedCount++;
+        }
+      }
+
+      if (addedCount > 0) {
+        localStorage.setItem('claws_custom_words', JSON.stringify(this.customWordsList));
+        this.updateCustomWordsCountBadge();
+        this.renderCustomWordsList();
+        this.showToast(`Successfully imported ${addedCount} new custom words`);
+      } else {
+        this.showToast('No new words found in file');
+      }
+    } catch (e) {
+      console.error('Failed to import custom words file:', e);
+      this.showToast('Failed to import file');
+    }
+  }
+
+  private ignoreWordForSession(word: string): void {
+    this.sessionIgnoredWords.add(word);
+    this.markWordAsCorrectInSession(word);
+    this.hidePopover();
+    this.showToast(`Ignored "${word}" for this session`);
+  }
+
+  private markWordAsCorrectInSession(word: string): void {
+    let typoCount = 0;
+    this.currentTokens.forEach(t => {
+      if (t.token === word) {
+        t.spellResult = {
+          word: t.token,
+          normalized_word: t.token,
+          is_correct: true,
+          suggestions: []
+        };
+      } else if (t.spellResult && !t.spellResult.is_correct) {
+        typoCount++;
+      }
+    });
+
+    if (this.toggleSpellcheck?.checked && typoCount > 0) {
+      this.spellStats.style.display = 'inline-block';
+      this.spellStats.textContent = `${typoCount} typo${typoCount > 1 ? 's' : ''}`;
+    } else {
+      this.spellStats.style.display = 'none';
+    }
+
+    this.renderOutput();
   }
 
   private copyToClipboard(): void {
