@@ -51,6 +51,23 @@ class AppController {
   private ackDialog = document.getElementById('ack-dialog') as HTMLDialogElement;
   private btnCloseDialog = document.getElementById('btn-close-dialog') as HTMLButtonElement;
   private btnDialogDone = document.getElementById('btn-dialog-done') as HTMLButtonElement;
+  private btnDict = document.getElementById('btn-dict') as HTMLButtonElement;
+  private dictDialog = document.getElementById('dict-dialog') as HTMLDialogElement;
+  private btnCloseDictDialog = document.getElementById('btn-close-dict-dialog') as HTMLButtonElement;
+  private btnDictDone = document.getElementById('btn-dialog-done') as HTMLButtonElement;
+  private dictSearchInput = document.getElementById('dict-search-input') as HTMLInputElement;
+  private btnClearDictSearch = document.getElementById('btn-clear-dict-search') as HTMLButtonElement;
+  private dictFilterPills = document.querySelectorAll<HTMLButtonElement>('.dict-filter-pill');
+  private dictSortSelect = document.getElementById('dict-sort-select') as HTMLSelectElement;
+  private dictStatsText = document.getElementById('dict-stats-text') as HTMLElement;
+  private dictWordsGrid = document.getElementById('dict-words-grid') as HTMLElement;
+  private dictLoadMore = document.getElementById('dict-load-more') as HTMLElement;
+  private btnDictLoadMore = document.getElementById('btn-dict-load-more') as HTMLButtonElement;
+
+  private dictCurrentMode: 'contains' | 'prefix' | 'suffix' | 'fuzzy' | 'exact' = 'contains';
+  private dictCurrentOffset: number = 0;
+  private dictPageSize: number = 80;
+  private dictSearchDebounce: number | null = null;
   private btnTheme = document.getElementById('btn-theme') as HTMLButtonElement;
   private currentTheme: 'light' | 'dark' = 'light';
 
@@ -234,6 +251,69 @@ class AppController {
         this.ackDialog.close();
       }
     });
+
+    // Dictionary Explorer
+    this.btnDict?.addEventListener('click', () => {
+      this.openDictDialog();
+    });
+
+    this.btnCloseDictDialog?.addEventListener('click', () => {
+      this.dictDialog?.close();
+    });
+
+    const btnDictDone = document.getElementById('btn-dict-done');
+    btnDictDone?.addEventListener('click', () => {
+      this.dictDialog?.close();
+    });
+
+    this.dictDialog?.addEventListener('click', (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target === this.dictDialog) {
+        this.dictDialog.close();
+      }
+    });
+
+    this.dictSearchInput?.addEventListener('input', () => {
+      const val = this.dictSearchInput.value;
+      if (this.btnClearDictSearch) {
+        this.btnClearDictSearch.style.display = val ? 'block' : 'none';
+      }
+      if (this.dictSearchDebounce) {
+        window.clearTimeout(this.dictSearchDebounce);
+      }
+      this.dictSearchDebounce = window.setTimeout(() => {
+        this.renderDictWords(true);
+      }, 100);
+    });
+
+    this.btnClearDictSearch?.addEventListener('click', () => {
+      this.dictSearchInput.value = '';
+      this.btnClearDictSearch.style.display = 'none';
+      this.dictSearchInput.focus();
+      this.renderDictWords(true);
+    });
+
+    this.dictFilterPills.forEach(pill => {
+      pill.addEventListener('click', () => {
+        this.dictFilterPills.forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        const mode = pill.dataset.dictMode;
+        if (mode === 'prefix' || mode === 'suffix' || mode === 'fuzzy' || mode === 'exact' || mode === 'contains') {
+          this.dictCurrentMode = mode;
+        } else {
+          this.dictCurrentMode = 'contains';
+        }
+        this.renderDictWords(true);
+      });
+    });
+
+    this.dictSortSelect?.addEventListener('change', () => {
+      this.renderDictWords(true);
+    });
+
+    this.btnDictLoadMore?.addEventListener('click', () => {
+      this.renderDictWords(false);
+    });
   }
 
   private initTheme(): void {
@@ -255,6 +335,91 @@ class AppController {
     const next = this.currentTheme === 'dark' ? 'light' : 'dark';
     this.setTheme(next);
     this.showToast(`Switched to ${next} mode`);
+  }
+
+  private openDictDialog(): void {
+    this.dictDialog?.showModal();
+    this.dictSearchInput?.focus();
+    this.renderDictWords(true);
+  }
+
+  private renderDictWords(reset: boolean = false): void {
+    if (!this.dictWordsGrid) return;
+    if (reset) {
+      this.dictCurrentOffset = 0;
+      this.dictWordsGrid.innerHTML = '';
+    }
+
+    const query = this.dictSearchInput ? this.dictSearchInput.value.trim() : '';
+    const sortVal = this.dictSortSelect ? this.dictSortSelect.value : 'freq-desc';
+    const [sortBy, sortOrder] = sortVal.split('-') as ['freq' | 'alpha' | 'length', 'asc' | 'desc'];
+
+    const result = spellChecker.filterWords({
+      query,
+      mode: this.dictCurrentMode,
+      sortBy: sortBy || 'freq',
+      sortOrder: sortOrder || 'desc',
+      limit: this.dictPageSize,
+      offset: this.dictCurrentOffset
+    });
+
+    const totalCount = spellChecker.getWordCount();
+    const isSearching = query.length > 0;
+    
+    if (this.dictStatsText) {
+      if (isSearching) {
+        this.dictStatsText.textContent = `Found ${result.total.toLocaleString()} matching words out of ${totalCount.toLocaleString()}`;
+      } else {
+        this.dictStatsText.textContent = `Total ${totalCount.toLocaleString()} vocabulary words in dictionary`;
+      }
+    }
+
+    if (result.total === 0) {
+      this.dictWordsGrid.innerHTML = `<div class="dict-empty-state">No matching dictionary words found for "${this.escapeHtml(query)}"</div>`;
+      if (this.dictLoadMore) this.dictLoadMore.style.display = 'none';
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    result.words.forEach(item => {
+      const card = document.createElement('div');
+      card.className = 'dict-word-card';
+      card.title = `Click to append "${item.word}" to input`;
+      const freqLabel = item.freq > 1 ? item.freq.toLocaleString() : `${item.word.length} chars`;
+      card.innerHTML = `
+        <span class="dict-word-text">${this.escapeHtml(item.word)}</span>
+        <span class="dict-word-freq">${freqLabel}</span>
+      `;
+      card.addEventListener('click', () => {
+        this.insertWordIntoInput(item.word);
+      });
+      fragment.appendChild(card);
+    });
+
+    this.dictWordsGrid.appendChild(fragment);
+    this.dictCurrentOffset += result.words.length;
+
+    if (this.dictLoadMore) {
+      if (this.dictCurrentOffset < result.total) {
+        this.dictLoadMore.style.display = 'flex';
+      } else {
+        this.dictLoadMore.style.display = 'none';
+      }
+    }
+  }
+
+  private insertWordIntoInput(word: string): void {
+    const cur = this.textInput.value.trim();
+    if (!cur) {
+      this.textInput.value = word;
+    } else {
+      this.textInput.value = cur + ' ' + word;
+    }
+    this.updateInputStats();
+    this.showToast(`Added "${word}" to input`);
+    if (this.autoSegmentCheckbox?.checked) {
+      this.runSegmentation();
+    }
   }
 
   private switchMobileTab(tab: 'input' | 'output'): void {

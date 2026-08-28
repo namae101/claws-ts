@@ -861,6 +861,84 @@ export class KhmerSpellChecker {
   ): SuggestionItem[] {
     return this.suggest(query, maxSuggestions, maxDistance, minScore, 'fuzzy');
   }
+  public getWordCount(): number {
+    return this.words.size;
+  }
+
+  public getAllWords(): string[] {
+    return Array.from(this.words);
+  }
+
+  public filterWords(options: {
+    query?: string;
+    mode?: 'contains' | 'prefix' | 'suffix' | 'exact' | 'fuzzy';
+    sortBy?: 'freq' | 'alpha' | 'length';
+    sortOrder?: 'asc' | 'desc';
+    limit?: number;
+    offset?: number;
+  } = {}): { total: number; words: Array<{ word: string; freq: number }> } {
+    const {
+      query = '',
+      mode = 'contains',
+      sortBy = 'freq',
+      sortOrder = 'desc',
+      limit = 100,
+      offset = 0
+    } = options;
+
+    const normQuery = normalize(query.trim());
+    let matchedWords: Array<{ word: string; freq: number }> = [];
+
+    if (!normQuery) {
+      for (const w of this.words) {
+        matchedWords.push({ word: w, freq: this.wordFreq[w] ?? 1.0 });
+      }
+    } else if (mode === 'prefix') {
+      const trieMatches = this.trie.findPrefix(normQuery, 10000);
+      for (const [w, freq] of trieMatches) {
+        matchedWords.push({ word: w, freq });
+      }
+    } else if (mode === 'suffix') {
+      const revQuery = normQuery.split('').reverse().join('');
+      const trieMatches = this.suffixTrie.findPrefix(revQuery, 10000);
+      for (const [revWord] of trieMatches) {
+        const w = revWord.split('').reverse().join('');
+        matchedWords.push({ word: w, freq: this.wordFreq[w] ?? 1.0 });
+      }
+    } else if (mode === 'exact') {
+      if (this.words.has(normQuery)) {
+        matchedWords.push({ word: normQuery, freq: this.wordFreq[normQuery] ?? 1.0 });
+      }
+    } else if (mode === 'fuzzy') {
+      const suggestions = this.fuzzySearch(normQuery, 100);
+      for (const s of suggestions) {
+        matchedWords.push({ word: s.word, freq: s.frequency });
+      }
+    } else {
+      for (const w of this.words) {
+        if (w.includes(normQuery)) {
+          matchedWords.push({ word: w, freq: this.wordFreq[w] ?? 1.0 });
+        }
+      }
+    }
+
+    matchedWords.sort((a, b) => {
+      let cmp = 0;
+      if (sortBy === 'freq') {
+        cmp = b.freq - a.freq;
+      } else if (sortBy === 'alpha') {
+        cmp = a.word.localeCompare(b.word, 'km');
+      } else if (sortBy === 'length') {
+        cmp = b.word.length - a.word.length;
+      }
+      return sortOrder === 'asc' ? -cmp : cmp;
+    });
+
+    const total = matchedWords.length;
+    const paginated = matchedWords.slice(offset, offset + limit);
+
+    return { total, words: paginated };
+  }
 }
 
 // Global default singleton instance (lazy on first request)
