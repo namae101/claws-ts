@@ -871,9 +871,6 @@ export class KhmerSpellChecker {
   ): SuggestionItem[] {
     return this.suggest(query, maxSuggestions, maxDistance, minScore, 'fuzzy');
   }
-  public getWordCount(): number {
-    return this.words.size;
-  }
 
   public getAllWords(): string[] {
     return Array.from(this.words);
@@ -904,13 +901,13 @@ export class KhmerSpellChecker {
         matchedWords.push({ word: w, freq: this.wordFreq[w] ?? 1.0 });
       }
     } else if (mode === 'prefix') {
-      const trieMatches = this.trie.findPrefix(normQuery, 10000);
+      const trieMatches = this.trie.prefixSearch(normQuery, 10000);
       for (const [w, freq] of trieMatches) {
         matchedWords.push({ word: w, freq });
       }
     } else if (mode === 'suffix') {
       const revQuery = normQuery.split('').reverse().join('');
-      const trieMatches = this.suffixTrie.findPrefix(revQuery, 10000);
+      const trieMatches = this.suffixTrie.prefixSearch(revQuery, 10000);
       for (const [revWord] of trieMatches) {
         const w = revWord.split('').reverse().join('');
         matchedWords.push({ word: w, freq: this.wordFreq[w] ?? 1.0 });
