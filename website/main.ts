@@ -14,6 +14,9 @@ type ViewMode = 'chips' | 'space' | 'zwsp' | 'json';
 
 interface TokenAnalysis {
   token: string;
+  tokenIndex: number;
+  startIndex: number;
+  endIndex: number;
   spellResult?: WordSpellCheckResult;
 }
 
@@ -546,16 +549,31 @@ class AppController {
       const doSpellcheck = this.toggleSpellcheck ? this.toggleSpellcheck.checked : true;
       let typoCount = 0;
 
-      this.currentTokens = rawTokens.map(tok => {
+      const rawInputText = this.textInput.value;
+      let searchCursor = 0;
+
+      this.currentTokens = rawTokens.map((tok, tokenIndex) => {
+        let start = -1;
+        let end = -1;
+        const foundPos = rawInputText.indexOf(tok, searchCursor);
+        if (foundPos !== -1) {
+          start = foundPos;
+          end = foundPos + tok.length;
+          searchCursor = end;
+        }
+
         if (!doSpellcheck) {
-          return { token: tok };
+          return { token: tok, tokenIndex, startIndex: start, endIndex: end };
         }
         const spellResult = spellChecker.checkWord(tok, 6, 5);
-        if (!spellResult.is_correct) {
+        if (spellResult && !spellResult.is_correct) {
           typoCount++;
         }
         return {
           token: tok,
+          tokenIndex,
+          startIndex: start,
+          endIndex: end,
           spellResult
         };
       });
@@ -629,7 +647,7 @@ class AppController {
           chip.addEventListener('click', (e: MouseEvent) => {
             if (isMisspelled && item.spellResult) {
               e.stopPropagation();
-              this.showPopover(chip, item.token, item.spellResult.suggestions || []);
+              this.showPopover(chip, item, item.spellResult.suggestions || []);
             } else {
               navigator.clipboard.writeText(item.token);
               this.showToast(`Copied token: "${item.token}"`);
@@ -674,7 +692,7 @@ class AppController {
     }
   }
 
-  private showPopover(anchor: HTMLElement, originalWord: string, suggestions: string[]): void {
+  private showPopover(anchor: HTMLElement, tokenItem: TokenAnalysis, suggestions: string[]): void {
     const rect = anchor.getBoundingClientRect();
     const hasSuggestions = suggestions && suggestions.length > 0;
 
@@ -689,7 +707,7 @@ class AppController {
 
     this.suggestionPopover.innerHTML = `
       <div class="suggestion-header">
-        <span>Suggestions for "${this.escapeHtml(originalWord)}"</span>
+        <span>Suggestions for "${this.escapeHtml(tokenItem.token)}"</span>
       </div>
       <div class="suggestion-list">
         ${listHtml}
@@ -712,7 +730,7 @@ class AppController {
       el.addEventListener('click', () => {
         const replacement = el.dataset.suggestion;
         if (replacement) {
-          this.replaceWord(originalWord, replacement);
+          this.replaceWord(tokenItem, replacement);
         }
       });
     });
@@ -722,14 +740,77 @@ class AppController {
     this.suggestionPopover.classList.remove('show');
     this.outputContainer.classList.remove('scroll-locked');
   }
-  private replaceWord(originalWord: string, replacement: string): void {
+  private replaceWord(tokenItem: TokenAnalysis, replacement: string): void {
     const currentText = this.textInput.value;
-    const updated = currentText.replace(originalWord, replacement);
-    this.textInput.value = updated;
+    const oldToken = tokenItem.token;
+    const lengthDiff = replacement.length - oldToken.length;
+
+    // 1. Update textInput value at exact position
+    if (tokenItem.startIndex >= 0 && tokenItem.endIndex > tokenItem.startIndex && currentText.slice(tokenItem.startIndex, tokenItem.endIndex) === oldToken) {
+      const before = currentText.slice(0, tokenItem.startIndex);
+      const after = currentText.slice(tokenItem.endIndex);
+      this.textInput.value = before + replacement + after;
+    } else {
+      let targetOccurrence = 0;
+      for (let i = 0; i < tokenItem.tokenIndex; i++) {
+        if (this.currentTokens[i]?.token === oldToken) {
+          targetOccurrence++;
+        }
+      }
+      let pos = -1;
+      for (let count = 0; count <= targetOccurrence; count++) {
+        pos = currentText.indexOf(oldToken, pos + 1);
+        if (pos === -1) break;
+      }
+      if (pos !== -1) {
+        const before = currentText.slice(0, pos);
+        const after = currentText.slice(pos + oldToken.length);
+        this.textInput.value = before + replacement + after;
+        tokenItem.startIndex = pos;
+        tokenItem.endIndex = pos + oldToken.length;
+      } else {
+        this.textInput.value = currentText.replace(oldToken, replacement);
+      }
+    }
+
+    // 2. In-place update of currentTokens
+    tokenItem.token = replacement;
+    tokenItem.endIndex = tokenItem.startIndex + replacement.length;
+    tokenItem.spellResult = spellChecker.checkWord(replacement, 6, 5);
+
+    // Adjust start and end index for all subsequent tokens
+    if (lengthDiff !== 0) {
+      for (let i = tokenItem.tokenIndex + 1; i < this.currentTokens.length; i++) {
+        const nextToken = this.currentTokens[i];
+        if (nextToken && nextToken.startIndex >= 0) {
+          nextToken.startIndex += lengthDiff;
+          nextToken.endIndex += lengthDiff;
+        }
+      }
+    }
+
+    // 3. Update UI states & stats
     this.hidePopover();
     this.updateInputStats();
-    this.showToast(`Replaced "${originalWord}" with "${replacement}"`);
-    this.runSegmentation();
+
+    // 4. Update spell stats badge
+    let typoCount = 0;
+    this.currentTokens.forEach(t => {
+      if (t.spellResult && !t.spellResult.is_correct) {
+        typoCount++;
+      }
+    });
+
+    if (this.toggleSpellcheck?.checked && typoCount > 0) {
+      this.spellStats.style.display = 'inline-block';
+      this.spellStats.textContent = `${typoCount} typo${typoCount > 1 ? 's' : ''}`;
+    } else {
+      this.spellStats.style.display = 'none';
+    }
+
+    // 5. In-place re-render without neural network re-segmentation
+    this.renderOutput();
+    this.showToast(`Replaced "${oldToken}" with "${replacement}"`);
   }
 
   private copyToClipboard(): void {
