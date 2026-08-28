@@ -89,8 +89,10 @@ class AppController {
       const dictCount = spellChecker.getWordCount();
       this.metricsBadge.innerHTML = `Loaded in <span class="highlight">${initTime}ms</span> • <span class="device-tag ${this.currentBackend === 'cpu' ? 'cpu' : ''}">${deviceLabel}</span> • Dictionary: <span class="highlight">${dictCount.toLocaleString()}</span> words`;
 
-      // Initial segmentation
-      await this.runSegmentation();
+      // Initial segmentation (only if auto-segment is enabled)
+      if (this.autoSegmentCheckbox?.checked) {
+        await this.runSegmentation();
+      }
     } catch (err: unknown) {
       console.error('Failed to load Segmenter:', err);
       this.statusText.textContent = 'Error loading model';
@@ -121,12 +123,22 @@ class AppController {
       }
     });
 
+    this.autoSegmentCheckbox?.addEventListener('change', () => {
+      if (this.autoSegmentCheckbox.checked) {
+        this.runSegmentation();
+      }
+    });
+
     this.toggleNormalize?.addEventListener('change', () => {
-      this.runSegmentation();
+      if (this.currentTokens.length > 0 || this.autoSegmentCheckbox?.checked) {
+        this.runSegmentation();
+      }
     });
 
     this.toggleSpellcheck?.addEventListener('change', () => {
-      this.runSegmentation();
+      if (this.currentTokens.length > 0 || this.autoSegmentCheckbox?.checked) {
+        this.runSegmentation();
+      }
     });
 
     // Keyboard shortcut (Ctrl+Enter / Cmd+Enter)
@@ -157,11 +169,15 @@ class AppController {
       btn.addEventListener('click', () => {
         if (btn.dataset.clear === 'true') {
           this.textInput.value = '';
+          this.updateInputStats();
+          this.runSegmentation();
         } else if (btn.dataset.text) {
           this.textInput.value = btn.dataset.text;
+          this.updateInputStats();
+          if (this.autoSegmentCheckbox?.checked) {
+            this.runSegmentation();
+          }
         }
-        this.updateInputStats();
-        this.runSegmentation();
       });
     });
 
@@ -220,7 +236,9 @@ class AppController {
       this.updateBackendUI();
       this.statusText.textContent = 'GNN Ready';
       this.showToast(`Switched hardware engine to: ${target === 'webgl' ? 'GPU (WebGL)' : 'CPU'}`);
-      await this.runSegmentation();
+      if (this.currentTokens.length > 0 || this.autoSegmentCheckbox?.checked) {
+        await this.runSegmentation();
+      }
     } catch (err: unknown) {
       console.error(`Failed to switch backend to ${target}:`, err);
       this.showToast(`Error switching to ${target}`);
